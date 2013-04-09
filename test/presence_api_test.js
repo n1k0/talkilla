@@ -23,7 +23,7 @@ var socketURL = 'ws://' + serverHost + ':' + serverPort;
 describe("Server", function() {
   describe("startup & shutdown", function() {
 
-    it("should answer requests on a given port after calling start()",
+    it("should answer requests on a given port after start() completes",
       function(done) {
         var retVal = app.start(serverPort, function() {
           webSocket = new WebSocket(socketURL);
@@ -42,9 +42,9 @@ describe("Server", function() {
         // XXX test HTTP connection requests also
       });
 
-      // XXX test that both types of requests are refused after shutdown
+    it("should refuse requests after shutdown() completes");
 
-      // XXX test that server closes connections by the time shutdown finishes
+    it("should (eventually?) close connections after shutdown() completes");
   });
 
   describe("presence", function() {
@@ -66,6 +66,11 @@ describe("Server", function() {
     });
 
     afterEach(function() {
+      // XXX after we get deterministic tests for all of the intermittent
+      // fails, add a done param to this function, pass it to app.shutdown
+      // below, move the app.shutdown after the webSocket.close.  And decide
+      // if we want to wait for the websocket.close() to finish also
+      // (I suspect not)
       app.shutdown();
       if (webSocket) {
         webSocket.close();
@@ -143,8 +148,10 @@ describe("Server", function() {
         });
     });
 
-    it("should respond to an open connection with a list of logged in users",
-      function (done) {
+    it("should respond to an websocket open with an empty list of logged in " +
+       "users when no users are logged in",
+      function(done) {
+
         webSocket = new WebSocket(socketURL);
 
         webSocket.on('error', function(error) {
@@ -154,70 +161,34 @@ describe("Server", function() {
         webSocket.on('message', function (data, flags) {
           expect(flags.binary).to.equal(undefined);
           expect(flags.masked).to.equal(false);
-          expect(JSON.parse(data).users).to.deep.equal([{nick: "foo"}]);
+          expect(JSON.parse(data).users).to.deep.equal([]);
           done();
         });
 
-        signin('foo');
       });
 
-    it("should send the list of signed in users when a new user signs in",
-      function(done) {
-        /* jshint unused: vars */
-        var n = 1;
-        webSocket = new WebSocket(socketURL);
+    it("should respond to a websocket open that follows a sign-in with a " +
+       "list of just the signed-in user",
+      function (done) {
 
-        webSocket.on('error', function(error) {
-          expect(error).to.equal(null);
-        });
+        signin('foo', function () {
+          webSocket = new WebSocket(socketURL);
 
-        webSocket.on('message', function(data, flags) {
-          var parsed = JSON.parse(data);
-          if (n === 1)
-            expect(parsed.users).to.deep.equal([{nick:"first"}]);
-          if (n === 2) {
-            expect(parsed.users).to.deep.equal([{nick:"first"},
-                                                {nick:"second"}]);
+          webSocket.on('error', function(error) {
+            expect(error).to.equal(null);
+          });
+
+          // jshint unused:vars
+          webSocket.on('message', function (data, flags) {
+            expect(JSON.parse(data).users).to.deep.equal([{nick: "foo"}]);
             done();
-          }
-
-          n++;
-        });
-
-        signin('first', function() {
-          signin('second');
-        });
-      });
-
-    it("should send the list of signed in users when a user signs out",
-      function(done) {
-        /* jshint unused: vars */
-        var n = 1;
-        webSocket = new WebSocket(socketURL);
-
-        webSocket.on('error', function(error) {
-          expect(error).to.equal(null);
-        });
-
-        webSocket.on('message', function(data, flags) {
-          var parsed = JSON.parse(data);
-          if (n === 2)
-            expect(parsed.users).to.deep.equal([{nick: "first"},
-                                                {nick: "second"}]);
-          if (n === 3) {
-            expect(parsed.users).to.deep.equal([{nick: "second"}]);
-            done();
-          }
-
-          n++;
-        });
-
-        signin('first', function() {
-          signin('second', function() {
-            signout('first');
           });
         });
       });
+
+    it("should send the user list to all websockets when a user signs in");
+
+    it("should send the user list to all websockets when a user signs out");
 
   });
 });

@@ -83,6 +83,9 @@ function setupWebSocketServer(callback) {
     var connections = app.get('connections');
     connections.push(ws);
     app.set('connections', connections);
+
+    var users = app.get('users');
+    ws.send(JSON.stringify({users: users}), function(error) {});
   });
 
   wss.on('error', function(err) {
