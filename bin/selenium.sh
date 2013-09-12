@@ -50,6 +50,8 @@ start() {
 }
 
 stop() {
+    cat $PWD/firefox.log
+    cat $PWD/console.log
     if [ ! -f $SELENIUM_PID_FILE ]; then
         echo "Selenium server not running"
         exit 1
