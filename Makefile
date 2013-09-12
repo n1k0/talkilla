@@ -54,7 +54,7 @@ selenium:
 	bin/run_selenium_test.sh python -m unittest discover test/functional
 
 .PHONY: selenium-repeat
-REPEAT_TIMES ?= 20
+REPEAT_TIMES ?= 10
 REPEAT_TEST ?= -m unittest discover test/functional
 selenium-repeat:
 	bin/run_selenium_test.sh bin/repeat_loop.sh $(REPEAT_TIMES) python $(REPEAT_TEST)
