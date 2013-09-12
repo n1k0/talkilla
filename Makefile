@@ -1,7 +1,7 @@
 NODE_LOCAL_BIN=./node_modules/.bin
 
 .PHONY: test
-test: lint mocha selenium_all
+test: selenium-repeat
 
 install:
 	@npm install
