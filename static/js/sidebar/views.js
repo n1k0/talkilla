@@ -236,6 +236,8 @@
       this.user = options.user;
 
       this.user.on('change', this.render, this);
+
+      this.render();
     },
 
     render: function() {
