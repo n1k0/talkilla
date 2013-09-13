@@ -151,12 +151,17 @@ var SidebarApp = (function($, Backbone, _) {
   };
 
   SidebarApp.prototype._setupDebugLogging = function() {
-    if (!app.options.DEBUG)
-      return;
+//    if (!app.options.DEBUG)
+//      return;
 
     // worker port events logging
     this.port.on('talkilla.debug', function(event) {
       console.log('worker event', event.label, event.data);
+      dump('worker event "' + event.label + '"\n');
+      try {
+        dump('event.data' + JSON.stringify(event.data) + "\n");
+      } catch (x) {
+      }
     });
   };
 

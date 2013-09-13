@@ -632,8 +632,8 @@ PortCollection.prototype = {
    * Broadcast debug informations to all ports.
    */
   broadcastDebug: function(label, data) {
-    if (!_config.DEBUG)
-      return;
+//    if (!_config.DEBUG)
+//      return;
     for (var id in this.ports)
       this.ports[id].postEvent("talkilla.debug", {label: label, data: data});
   },
