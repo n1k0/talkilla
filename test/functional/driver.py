@@ -34,9 +34,9 @@ class Driver(WebDriver):
         """
         self.switchToSidebar()
         try:
-            output_base64_screenshot(self)
             nicks = self.waitForElements("ul.nav-list>li>a", visible=True)
         except:
+            output_base64_screenshot(self)
             raise
         filter(lambda e: e.text == nick, nicks)[0].click()
         return self.switchToChatWindow()

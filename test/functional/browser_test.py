@@ -41,7 +41,7 @@ def debug_on(*exceptions):
 # showing.
 # XXX Make the tests do this automatically on failure
 def output_base64_screenshot(driver):
-    print("data:image/png;base64,", driver.get_screenshot_as_base64())
+    print("data:image/png;base64," + driver.get_screenshot_as_base64())
 
 
 def kill_app(app):
