@@ -38,23 +38,26 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
     def test_signin_users(self):
         self.bob.signin()
         self.assertSignedInAs(self.bob, "bob")
+        try:
+            self.assertElementTextContains(self.bob, ".alert-info", "only person")
 
-        self.assertElementTextContains(self.bob, ".alert-info", "only person")
+            self.larry.signin()
+            self.assertSignedInAs(self.larry, "larry")
 
-        self.larry.signin()
-        self.assertSignedInAs(self.larry, "larry")
+            self.assertElementsCount(self.bob, ".alert-info", 0)
+            self.assertElementsCount(self.larry, ".alert-info", 0)
+            self.assertElementsCount(self.bob, ".username", 1)
+            self.assertElementsCount(self.larry, ".username", 1)
 
-        self.assertElementsCount(self.bob, ".alert-info", 0)
-        self.assertElementsCount(self.larry, ".alert-info", 0)
-        self.assertElementsCount(self.bob, ".username", 1)
-        self.assertElementsCount(self.larry, ".username", 1)
+            self.bob.signout()
+            self.assertElementsCount(self.bob, ".alert-info", 0)
 
-        self.bob.signout()
-        self.assertElementsCount(self.bob, ".alert-info", 0)
-
-        self.larry.signout()
-        self.assertElementsCount(self.bob, ".alert-info", 0)
-        self.assertSignedOut(self.larry)
+            self.larry.signout()
+            self.assertElementsCount(self.bob, ".alert-info", 0)
+            self.assertSignedOut(self.larry)
+        except:
+            output_base64_screenshot(self)
+            raise
 
 #    @unittest.skip("Dont")
     def test_chat_window(self):
