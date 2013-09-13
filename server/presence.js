@@ -30,7 +30,7 @@ function configureWs(ws, nick) {
 
   ws.on("presence_request", api.ws.onPresenceRequest);
 
-  logger.info({type: "connection"});
+  logger.info({type: "connection", data: nick});
   return ws;
 }
 
@@ -80,7 +80,7 @@ api = {
         return res.send(400, JSON.stringify({error: err}));
 
       users.add(nick);
-      logger.info({type: "signin"});
+      logger.info({type: "signin", nick: nick});
       res.send(200, JSON.stringify(users.get(nick)));
     });
   },
@@ -208,6 +208,7 @@ api = {
     onPresenceRequest: function(data, nick) {
       var user = users.get(nick);
       var presentUsers = users.toJSON(users.present());
+      logger.info({type: "onpresencerequest", nick: nick});
       user.send({users: presentUsers});
     },
 
@@ -250,6 +251,7 @@ api = {
     users.get(nick).connect(configureWs(ws, nick));
 
     presentUsers.forEach(function(user) {
+      logger.info({type: "send presence", user: user.nick, joined: nick});
       user.send({userJoined: nick}, function(error) {});
     });
   }
