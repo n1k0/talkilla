@@ -45,6 +45,8 @@ class Driver(WebDriver):
         if not self.nick:
             raise RuntimeError("No nick provided")
         self.switchToSidebar()
+        # Wait for everything to be loaded before we proceed.
+        self.waitForElement("#signin", visible=True)
         self.add_cookie({"name": "test email", "value": self.nick})
         self.clickElement("#signin")
         # Ensure we've completed logging in before proceeding
