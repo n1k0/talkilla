@@ -8,6 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
+from browser_test import output_base64_screenshot
 
 SELENIUM_COMMAND_EXECUTOR = os.getenv("SELENIUM_COMMAND_EXECUTOR",
                                       "http://127.0.0.1:4444/wd/hub")
@@ -32,7 +33,11 @@ class Driver(WebDriver):
             - nick: Peer username
         """
         self.switchToSidebar()
-        nicks = self.waitForElements("ul.nav-list>li>a", visible=True)
+        try:
+            output_base64_screenshot(self)
+            nicks = self.waitForElements("ul.nav-list>li>a", visible=True)
+        except:
+            raise
         filter(lambda e: e.text == nick, nicks)[0].click()
         return self.switchToChatWindow()
 
