@@ -81,6 +81,14 @@ function getContactsDatabase(doneCallback, contactDBName) {
 }
 
 function storeContact(username, doneCallback) {
+  // XXX If the contacts database is not open, don't store it as it probably
+  // hasn't finished being opened yet. This really needs refactoring later
+  // to delay starting things until the contacts database has been fully
+  // opened.
+  if (!contactsDb) {
+    ports.broadcastDebug("Not storing contact, as database is not open yet.");
+    return;
+  }
   var transaction = contactsDb.transaction([kContactDBName], "readwrite");
   var request = transaction.objectStore(kContactDBName)
                            .add({username: username});
