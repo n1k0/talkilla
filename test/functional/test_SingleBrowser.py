@@ -8,17 +8,14 @@ from browser_test import SingleNodeBrowserTest
 
 
 class SingleBrowserTest(mixins.WithSingleBob, SingleNodeBrowserTest):
-    @unittest.skip("Dont")
     def test_1_public_homepage(self):
         self.bob.get("http://127.0.0.1:3000/")
         self.bob.find_element_by_css_selector("button")
 
-    @unittest.skip("Dont")
     def test_2_sidebar(self):
         self.bob.switchToSidebar()
         self.assertTitleEquals(self.bob, "Talkilla Sidebar")
 
-    @unittest.skip("Dont")
     def test_3_login_persistence_over_reload(self):
         """ Checks that even if the user reloads the sidebar from the context
             menu, she'll remain logged in.
