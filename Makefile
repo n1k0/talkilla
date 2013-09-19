@@ -51,7 +51,7 @@ selenium_all: frontend selenium
 
 .PHONY: selenium
 selenium:
-	bin/run_selenium_test.sh python -m unittest discover test/functional
+	bin/run_selenium_test.sh python -m unittest discover -v test/functional
 
 .PHONY: selenium-repeat
 REPEAT_TIMES ?= 10
@@ -61,5 +61,5 @@ selenium-repeat:
 
 .PHONY: frontend
 frontend:
-	bin/run_selenium_test.sh python -m unittest discover test/frontend
+	bin/run_selenium_test.sh python -m unittest discover -v test/frontend
 
