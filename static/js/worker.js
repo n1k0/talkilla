@@ -4,6 +4,7 @@
 
 importScripts('../vendor/backbone-events-standalone-0.1.5.js',
               '/config.js',               // exposes loadConfig
+              'addressbook/db.js',        // exposes DB
               'addressbook/collected.js', // exposes CollectedContacts
               'worker/http.js',           // exposes HTTP
               'worker/spa.js');           // exposes SPA
