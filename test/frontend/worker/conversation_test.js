@@ -48,7 +48,7 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(contactsDb, "add");
+      sandbox.stub(contactsDb, "addUsername");
       _currentUserData = new UserData({_userName: "romain"});
       currentUsers = {
         florian: { presence: "connected" }
@@ -117,7 +117,7 @@ describe("Conversation", function() {
 
         currentConversation.windowOpened(port);
 
-        sinon.assert.calledOnce(contactsDb.add);
+        sinon.assert.calledOnce(contactsDb.addUsername);
       });
 
     it("should send peer presence information", function() {
@@ -137,7 +137,7 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(contactsDb, "add");
+      sandbox.stub(contactsDb, "addUsername");
       _currentUserData = new UserData({_userName: "romain"});
       port = {
         postEvent: sandbox.spy()

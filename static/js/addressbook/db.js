@@ -31,16 +31,16 @@ var DB = (function() {
     this.db = undefined;
   }
 
-  /**
-   * Loads the database.
-   *
-   * @param  {Function} cb Callback
-   *
-   * Callback parameters:
-   * - {Error|null} err: Encountered error, if any
-   * - {IDBDatabase} db: indexedDB database object
-   */
   DB.prototype = {
+    /**
+     * Loads the database.
+     *
+     * @param  {Function} cb Callback
+     *
+     * Callback parameters:
+     * - {Error|null} err: Encountered error, if any
+     * - {IDBDatabase} db: indexedDB database object
+     */
     load: function(cb) {
       if (this.db)
         return cb.call(this, null, this.db);
@@ -60,6 +60,41 @@ var DB = (function() {
         this.db = event.target.result;
         cb.call(this, null, this.db);
       }.bind(this);
+    },
+
+    /**
+     * Adds a new contact to the database. Automatically opens the database
+     * connexion if needed.
+     *
+     * @param {String}   record Contact information
+     * @param {Function} cb       Callback
+     * @param {Object}   options  Options
+     *
+     * Callback parameters:
+     * - {Error|null} err:      Encountered error, if any
+     * - {String}     record: Inserted contact record
+     *
+     * Options:
+     * - {Boolean}:   silentConstraint: Silent constraint error?
+     */
+    add: function(record, cb, options) {
+      this.load(function(err) {
+        if (err)
+          return cb.call(this, err);
+        var request = this._getStore("readwrite").add(record);
+        request.onsuccess = function() {
+          cb.call(this, null, record);
+        }.bind(this);
+        request.onerror = function(event) {
+          var err = event.target.error;
+          var silentConstraint = options && options.silentConstraint;
+          if (err && err.name === "ConstraintError" && silentConstraint) {
+            event.preventDefault();
+            return cb.call(this, null, record);
+          }
+          cb.call(this, err);
+        }.bind(this);
+      }.bind(this));
     },
 
     /**

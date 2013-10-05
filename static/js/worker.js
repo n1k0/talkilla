@@ -106,7 +106,7 @@ Conversation.prototype = {
    * Sends call information to the conversation window.
    */
   _sendCall: function() {
-    contactsDb.add(this.data.peer, function(err) {
+    contactsDb.addUsername(this.data.peer, function(err) {
       if (err)
         ports.broadcastError(err);
     });
@@ -597,12 +597,12 @@ spa = new SPA({src: "example.com"});
 _setupSPA(spa);
 
 function loadContacts(cb) {
-  contactsDb.all(function(err, records) {
+  contactsDb.allUsernames(function(err, usernames) {
     if (err) {
       contacts = [];
       ports.broadcastError(err);
     } else {
-      contacts = records;
+      contacts = usernames;
     }
 
     contacts.forEach(function(userId) {

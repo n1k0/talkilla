@@ -68,12 +68,12 @@ describe("CollectedContacts", function() {
     });
   });
 
-  describe("#add", function() {
+  describe("#addUsername", function() {
     it("should add a record to the database", function(done) {
-      contactsDb.add("florian", function(err, username) {
+      contactsDb.addUsername("florian", function(err, username) {
         expect(err).to.be.a("null");
         expect(username).eql("florian");
-        this.all(function(err, contacts) {
+        this.allUsernames(function(err, contacts) {
           expect(contacts).eql(["florian"]);
           done();
         });
@@ -82,9 +82,9 @@ describe("CollectedContacts", function() {
 
     it("shouldn't raise an error in case of a duplicate contact",
       function(done) {
-        contactsDb.add("niko", function(err) {
+        contactsDb.addUsername("niko", function(err) {
           expect(err).to.be.a("null");
-          this.add("niko", function(err) {
+          this.addUsername("niko", function(err) {
             expect(err).to.be.a("null");
             done();
           });
@@ -100,25 +100,25 @@ describe("CollectedContacts", function() {
         });
         return request;
       });
-      contactsDb.add("foo", function(err) {
+      contactsDb.addUsername("foo", function(err) {
         expect(err.message).eql("add error");
         done();
       });
     });
   });
 
-  describe("#all", function() {
+  describe("#allUsernames", function() {
     it("should retrieve no record when db is empty", function(done) {
-      contactsDb.all(function(err, contacts) {
+      contactsDb.allUsernames(function(err, contacts) {
         expect(contacts).to.have.length.of(0);
         done();
       });
     });
 
     it("should retrieve all contacts", function(done) {
-      contactsDb.add("niko", function() {
-        this.add("jb", function() {
-          this.all(function(err, contacts) {
+      contactsDb.addUsername("niko", function() {
+        this.addUsername("jb", function() {
+          this.allUsernames(function(err, contacts) {
             expect(err).to.be.a("null");
             expect(contacts).to.have.length.of(2);
             expect(contacts).to.contain("niko");
@@ -130,9 +130,9 @@ describe("CollectedContacts", function() {
     });
 
     it("should preserve the order of insertion", function(done) {
-      contactsDb.add("niko", function() {
-        this.add("jb", function() {
-          this.all(function(err, contacts) {
+      contactsDb.addUsername("niko", function() {
+        this.addUsername("jb", function() {
+          this.allUsernames(function(err, contacts) {
             expect(contacts).eql(["niko", "jb"]);
             done();
           });
@@ -148,7 +148,7 @@ describe("CollectedContacts", function() {
         });
         return cursor;
       });
-      contactsDb.all(function(err) {
+      contactsDb.allUsernames(function(err) {
         expect(err).eql("all error");
         done();
       });
@@ -164,10 +164,10 @@ describe("CollectedContacts", function() {
 
   describe("#drop", function() {
     it("should drop the database", function(done) {
-      contactsDb.add("niko", function() {
+      contactsDb.addUsername("niko", function() {
         this.drop(function(err) {
           expect(err).to.be.a("null");
-          this.all(function(err, contacts) {
+          this.allUsernames(function(err, contacts) {
             expect(contacts).to.have.length.of(0);
             done();
           });
