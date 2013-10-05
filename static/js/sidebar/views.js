@@ -1,4 +1,4 @@
-/*global app, sidebarApp, gapi, GoogleContacts */
+/*global app, sidebarApp, GoogleContacts */
 /* jshint camelcase:false */
 /**
  * Talkilla Backbone views.
