@@ -1,4 +1,4 @@
-/*global sinon, chai, DB, IDBDatabase, IDBObjectStore, xit */
+/*global sinon, chai, DB, IDBDatabase, IDBObjectStore */
 /* jshint expr:true */
 
 var expect = chai.expect;
@@ -33,17 +33,16 @@ describe("DB", function() {
     });
 
     it("should raise an error if no dbname option is passed", function() {
-      expect(createTestDB.bind(null, {storename: "test"})).to.Throw(Error);
+      expect(createTestDB.bind(null, {storename: "test"})).to.Throw(/dbname/);
     });
 
     it("should raise an error if no storename option is passed", function() {
-      expect(createTestDB.bind(null, {dbname: "test"})).to.Throw(Error);
+      expect(createTestDB.bind(null, {dbname: "test"})).to.Throw(/storename/);
     });
 
     it("should set default options", function() {
       var testDB = createTestDB({dbname: "foo", storename: "bar", version: 2});
-      expect(testDB.options).to.include.keys(
-        "dbname", "storename", "version");
+      expect(testDB.options).to.include.keys("dbname", "storename", "version");
       expect(testDB.options.dbname).eql("foo");
       expect(testDB.options.storename).eql("bar");
       expect(testDB.options.version).eql(2);
@@ -69,8 +68,6 @@ describe("DB", function() {
     });
 
     describe("#load", function() {
-      xit("should raise an error if no schema creation method is provided");
-
       it("should load the database", function(done) {
         testDB.load(function(err, db) {
           expect(err).to.be.a("null");

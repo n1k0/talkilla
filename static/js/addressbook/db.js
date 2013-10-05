@@ -167,6 +167,17 @@ var DB = (function() {
     },
 
     /**
+     * Creates object store. Must me overidden to define an actual data schema.
+     *
+     * @abstract
+     * @param  {IDBDatabase}    db indexedDB database
+     * @return {IDBObjectStore}
+     */
+    _createStore: function() {
+      throw new Error("You must implement _createStore() to create a store");
+    },
+
+    /**
      * Retrieve current contact object store.
      *
      * @param  {String} mode Access mode - "readwrite" or "readonly")
