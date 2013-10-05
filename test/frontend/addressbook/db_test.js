@@ -159,6 +159,102 @@ describe("DB", function() {
       });
     });
 
+    describe("#put", function() {
+      it("should create a record into the database if it doesn't exist yet",
+        function(done) {
+          var test = {foo: "bar"};
+          testDB.put(test, function(err, record) {
+            expect(err).to.be.a("null");
+            expect(record).eql(test);
+            this.all(function(err, records) {
+              expect(records).eql([test]);
+              done();
+            });
+          });
+        });
+
+      it("shouldn't create a new record if it already exist", function(done) {
+        var test = {foo: "bar"};
+        testDB.add(test, function(err) {
+          this.put(test, function(err) {
+            expect(err).to.be.a("null");
+            this.all(function(err, records) {
+              expect(records).to.have.length.of(1);
+              expect(records).eql([test]);
+              done();
+            });
+          });
+        });
+      });
+
+      it("should pass back any load error", function(done) {
+        sandbox.stub(indexedDB, "open", function() {
+          var request = {};
+          setTimeout(function() {
+            request.onerror({target: {errorCode: "load error"}});
+          });
+          return request;
+        });
+        testDB.put({foo: "bar"}, function(err) {
+          expect(err).eql("load error");
+          done();
+        });
+      });
+
+      it("should pass back any put error", function(done) {
+        var test = {foo: "bar"};
+        sandbox.stub(IDBObjectStore.prototype, "put", function() {
+          var request = {};
+          setTimeout(function() {
+            request.onerror({target: {error: {name: "InvalidStateError",
+                                              message: "put error"}}});
+          });
+          return request;
+        });
+        testDB.put(test, function(err) {
+          expect(err.message).eql("put error");
+          done();
+        });
+      });
+    });
+
+    describe("#get", function() {
+      it("should retrieve an existing record", function(done) {
+        var test = {foo: "bar"};
+        testDB.add(test, function() {
+          this.get("foo", "bar", function(err, record) {
+            expect(err).to.be.a("null");
+            expect(record).eql(test);
+            done();
+          });
+        });
+      });
+
+      it("should pass back an error if no record was found", function(done) {
+        var test = {foo: "bar"};
+        testDB.add(test, function() {
+          this.get("foo", "baz", function(err, record) {
+            expect(err).to.be.an.instanceOf(Error);
+            done();
+          });
+        });
+      });
+
+      it("should pass back any load error", function(done) {
+        sandbox.stub(indexedDB, "open", function() {
+          var request = {};
+          setTimeout(function() {
+            request.onerror({target: {errorCode: "load error"}});
+          });
+          return request;
+        });
+        testDB.get("foo", "bar", function(err) {
+          expect(err).eql("load error");
+          done();
+        });
+      });
+    });
+
     describe("#all", function() {
       it("should retrieve no record when db is empty", function(done) {
         testDB.all(function(err, records) {

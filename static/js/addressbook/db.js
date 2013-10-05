@@ -63,16 +63,16 @@ var DB = (function() {
     },
 
     /**
-     * Adds a new contact to the database. Automatically opens the database
+     * Adds a new record to the database. Automatically opens the database
      * connexion if needed.
      *
-     * @param {String}   record Contact information
+     * @param {Object}   record   Record
      * @param {Function} cb       Callback
      * @param {Object}   options  Options
      *
      * Callback parameters:
-     * - {Error|null} err:      Encountered error, if any
-     * - {String}     record: Inserted contact record
+     * - {Error|null} err:    Encountered error, if any
+     * - {String}     record: Inserted record
      *
      * Options:
      * - {Boolean}:   silentConstraint: Silent constraint error?
@@ -98,14 +98,68 @@ var DB = (function() {
     },
 
     /**
-     * Retrieves all contacts from the database. Automatically opens the
+     * Adds or create a new record into the database. Automatically opens the
+     * database connexion if needed.
+     *
+     * @param {Object}   record   Record
+     * @param {Function} cb       Callback
+     * @param {Object}   options  Options
+     *
+     * Callback parameters:
+     * - {Error|null} err:    Encountered error, if any
+     * - {String}     record: Inserted record
+     */
+    put: function(record, cb) {
+      this.load(function(err) {
+        if (err)
+          return cb.call(this, err);
+        var request = this._getStore("readwrite").put(record);
+        request.onsuccess = function() {
+          cb.call(this, null, record);
+        }.bind(this);
+        request.onerror = function(event) {
+          cb.call(this, event.target.error);
+        }.bind(this);
+      }.bind(this));
+    },
+
+    /**
+     * Retrieves the record matching the provided key. Automatically opens the
+     * database connexion if needed.
+     *
+     * @param {String}   key  Key
+     * @param {Function} cb   Callback
+     *
+     * Callback parameters:
+     * - {Error|null} err:    Encountered error, if any
+     * - {String}     record: Matching record
+     */
+    get: function(index, key, cb) {
+      this.load(function(err) {
+        if (err)
+          return cb.call(this, err);
+        var store = this._getStore("readonly").index("foo");
+        var request = store.get(key);
+        request.onerror = function(event) {
+          cb.call(this, event.target.errorCode);
+        }.bind(this);
+        request.onsuccess = function(event) {
+          if (typeof event.target.result === 'undefined')
+            return cb.call(this, new Error("No record found, key=" + key));
+          cb.call(this, null, event.target.result);
+        }.bind(this);
+      });
+    },
+
+    /**
+     * Retrieves all records from the database. Automatically opens the
      * database connexion if needed.
      *
      * @param  {Function} cb Callback
      *
      * Callback parameters:
-     * - {Error|null} err:      Encountered error, if any
-     * - {Array}      contacts: Contacts list
+     * - {Error|null} err:     Encountered error, if any
+     * - {Array}      records: Records list
      */
     all: function(cb) {
       this.load(function(err) {
@@ -178,7 +232,7 @@ var DB = (function() {
     },
 
     /**
-     * Retrieve current contact object store.
+     * Retrieve current object store.
      *
      * @param  {String} mode Access mode - "readwrite" or "readonly")
      * @return {IDBObjectStore}
