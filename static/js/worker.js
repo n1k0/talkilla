@@ -392,6 +392,20 @@ var handlers = {
   },
 
   // Talkilla events
+  'talkilla.contacts': function(event) {
+    ports.broadcastDebug('talkilla.contacts', event.data.contacts);
+    contacts = (event.data.contacts || []).reduce(function(acc, contact) {
+      if (acc.indexOf(contact) === -1)
+        acc.push(contact);
+      return acc;
+    }, contacts);
+    contacts.forEach(function(userId) {
+      if (!Object.prototype.hasOwnProperty.call(currentUsers, userId))
+        currentUsers[userId] = {presence: "disconnected"};
+    });
+    ports.broadcastEvent('talkilla.users', getCurrentUsersArray());
+  },
+
   'talkilla.login': function(msg) {
     if (!msg.data || !msg.data.assertion) {
       return this.postEvent('talkilla.login-failure', 'no assertion given');

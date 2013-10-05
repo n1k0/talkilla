@@ -9,7 +9,7 @@ describe("ImportContactsView", function() {
     sandbox = sinon.sandbox.create();
     $('body').append([
       '<div id="import-contacts">',
-      '  <button>Import contacts</button>',
+      '  <button>Load your contacts</button>',
       '</div>',
     ].join(''));
     user = new app.models.User();

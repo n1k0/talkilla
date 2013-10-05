@@ -287,7 +287,7 @@
     el: "#import-contacts",
 
     events: {
-      "click button": 'importContacts'
+      "click button": 'loadGoogleContacts'
     },
 
     initialize: function(options) {
@@ -298,14 +298,14 @@
       this.user.on('signin signout', this.render, this);
     },
 
-    importContacts: function() {
+    loadGoogleContacts: function() {
       new GoogleContacts().authorize(function(err) {
-        if (err)
-          return; // XXX: error notification
+        if (err) // XXX: error notification
+          return console.error("google auth error", err);
         this.all(function(err, contacts) {
-          if (err)
-            return; // XXX: error notification
-          sidebarApp.postEvent("addressbook:new-contacts", {
+          if (err) // XXX: error notification
+            return console.error("contact import error", err);
+          sidebarApp.port.postEvent("talkilla.contacts", {
             contacts: contacts
           });
         });

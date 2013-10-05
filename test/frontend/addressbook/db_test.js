@@ -175,7 +175,7 @@ describe("DB", function() {
 
       it("shouldn't create a new record if it already exist", function(done) {
         var test = {foo: "bar"};
-        testDB.add(test, function(err) {
+        testDB.add(test, function() {
           this.put(test, function(err) {
             expect(err).to.be.a("null");
             this.all(function(err, records) {
@@ -234,6 +234,7 @@ describe("DB", function() {
         var test = {foo: "bar"};
         testDB.add(test, function() {
           this.get("foo", "baz", function(err, record) {
+            expect(record).to.be.a("undefined");
             expect(err).to.be.an.instanceOf(Error);
             done();
           });
