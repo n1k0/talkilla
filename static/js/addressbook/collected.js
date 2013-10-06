@@ -48,6 +48,8 @@ var CollectedContacts = (function() {
    */
   CollectedContacts.prototype.allUsernames = function(cb) {
     this.all(function(err, records) {
+      if (!cb)
+        return;
       if (err)
         return cb.call(this, err);
       cb.call(this, null, records.map(function(record) {
