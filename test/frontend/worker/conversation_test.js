@@ -1,6 +1,5 @@
 /*global expect, sinon, _currentUserData:true, currentConversation:true,
-  UserData, browserPort:true, contactsDb, Conversation,
-  currentUsers:true */
+  UserData, browserPort:true, contactsDb, Conversation, tkWorker */
 /* jshint expr:true */
 
 describe("Conversation", function() {
@@ -44,9 +43,9 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(contactsDb, "add");
+      sandbox.stub(contactsDb, "addUsername");
       _currentUserData = new UserData({_userName: "romain"});
-      currentUsers = {
+      tkWorker.currentUsers = {
         florian: { presence: "connected" }
       };
       port = {
@@ -59,7 +58,7 @@ describe("Conversation", function() {
 
     afterEach(function() {
       _currentUserData = undefined;
-      currentUsers = {};
+      tkWorker.currentUsers = {};
       port = undefined;
     });
 
@@ -113,7 +112,7 @@ describe("Conversation", function() {
 
         currentConversation.windowOpened(port);
 
-        sinon.assert.calledOnce(contactsDb.add);
+        sinon.assert.calledOnce(contactsDb.addUsername);
       });
 
     it("should send peer presence information", function() {
@@ -133,7 +132,7 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(contactsDb, "add");
+      sandbox.stub(contactsDb, "addUsername");
       _currentUserData = new UserData({_userName: "romain"});
       port = {
         postEvent: sandbox.spy()
@@ -142,7 +141,7 @@ describe("Conversation", function() {
         peer: "florian"
       };
 
-      currentUsers = {
+      tkWorker.currentUsers = {
         florian: { presence: "connected" }
       };
 

@@ -1,4 +1,5 @@
-/*global app, sidebarApp */
+/*global app, sidebarApp, GoogleContacts */
+/* jshint camelcase:false */
 /**
  * Talkilla Backbone views.
  */
@@ -33,11 +34,16 @@
         user: options.user,
         collection: options && options.users
       });
+
+      this.importButton = new app.views.ImportContactsView({
+        user: options.user
+      });
     },
 
     render: function() {
       this.login.render();
       this.users.render();
+      this.importButton.render();
       return this;
     }
   });
@@ -210,7 +216,8 @@
         if (!this.activeNotification)
           this.activeNotification =
             app.utils.notifyUI('You are the only person logged in, ' +
-                                'invite your friends.', 'info');
+                                'invite your friends or import your contacts ' +
+                                '(see below).', 'info');
       }
       else {
         if (this.activeNotification)
@@ -277,6 +284,44 @@
     signout: function(event) {
       event.preventDefault();
       navigator.id.logout();
+    }
+  });
+
+  app.views.ImportContactsView = Backbone.View.extend({
+    el: "#import-contacts",
+
+    events: {
+      "click button": 'loadGoogleContacts'
+    },
+
+    initialize: function(options) {
+      options = options || {};
+      if (!options.user)
+        throw new Error("missing parameter: user");
+      this.user = options.user;
+      this.user.on('signin signout', this.render, this);
+    },
+
+    loadGoogleContacts: function() {
+      new GoogleContacts().authorize(function(err) {
+        if (err) // XXX: error notification
+          return console.error("google auth error", err);
+        this.all(function(err, contacts) {
+          if (err) // XXX: error notification
+            return console.error("contact import error", err);
+          sidebarApp.port.postEvent("talkilla.contacts", {
+            contacts: contacts
+          });
+        });
+      });
+    },
+
+    render: function() {
+      if (this.user.isLoggedIn())
+        this.$el.show();
+      else
+        this.$el.hide();
+      return this;
     }
   });
 })(app, Backbone, _);
