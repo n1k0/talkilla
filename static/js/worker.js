@@ -626,17 +626,21 @@ TkWorker.prototype = {
    */
   loadContacts: function(cb) {
     this.contactsDb.all(function(err, contacts) {
-      if (err)
-        return this.ports.broadcastError(err);
+      if (err) {
+        this.ports.broadcastError(err);
+        if (typeof cb === "function")
+          return cb.call(this, err);
+        return;
+      }
       this.updateContactList(contacts);
       // callback is mostly useful for tests
       if (typeof cb === "function")
-        cb();
+        cb.call(this, null, contacts);
     }.bind(this));
   },
 
   /**
-   * Updates contacts presence information.
+   * Updates the current users list with provided contacts.
    *
    * @param  {Array} contacts
    */
@@ -645,8 +649,8 @@ TkWorker.prototype = {
       var userId = record.username;
       if (!Object.prototype.hasOwnProperty.call(this.currentUsers, userId))
         this.currentUsers[userId] = {presence: "disconnected"};
-      this.ports.broadcastEvent('talkilla.users', getCurrentUsersArray());
-    });
+    }, this);
+    this.ports.broadcastEvent('talkilla.users', getCurrentUsersArray());
   }
 };
 
