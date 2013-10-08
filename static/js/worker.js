@@ -641,7 +641,8 @@ TkWorker.prototype = {
    * @param  {Array} contacts
    */
   updateContactList: function(contacts) {
-    contacts.forEach(function(userId) {
+    contacts.forEach(function(record) {
+      var userId = record.username;
       if (!Object.prototype.hasOwnProperty.call(this.currentUsers, userId))
         this.currentUsers[userId] = {presence: "disconnected"};
       this.ports.broadcastEvent('talkilla.users', getCurrentUsersArray());

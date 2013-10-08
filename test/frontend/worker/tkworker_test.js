@@ -26,7 +26,7 @@ describe("tkWorker", function() {
   describe("#loadContacts", function() {
     beforeEach(function(done) {
       // Store a contact for the tests
-      contactsDb.add("foo", function() {
+      contactsDb.addUsername("foo", function() {
         done();
       });
     });
