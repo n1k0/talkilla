@@ -1,4 +1,4 @@
-/*global chai, sinon, contactsDb, TkWorker, currentUsers, ports */
+/*global chai, sinon, contactsDb, TkWorker, ports */
 
 var expect = chai.expect;
 
@@ -11,8 +11,7 @@ describe("tkWorker", function() {
     contactsDb.options.dbname = "TalkillaContactsTest";
     worker = new TkWorker({
       ports: ports,
-      contactsDb: contactsDb,
-      currentUsers: currentUsers
+      contactsDb: contactsDb
     });
   });
 
@@ -64,7 +63,7 @@ describe("tkWorker", function() {
     it("should broadcast an error message on failure", function() {
       var err = new Error("ko");
       sandbox.stub(ports, "broadcastError");
-      sandbox.stub(contactsDb, "all", function(cb) {
+      sandbox.stub(contactsDb, "allUsernames", function(cb) {
         cb(err);
       });
 
@@ -80,7 +79,7 @@ describe("tkWorker", function() {
 
     beforeEach(function() {
       worker.currentUsers.foo = {presence: "connected"};
-      contacts = [{username: "foo"}, {username: "bar"}];
+      contacts = ["foo", "bar"];
     });
 
     it("should add contacts to the currentUsers list", function() {
