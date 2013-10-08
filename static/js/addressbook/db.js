@@ -44,7 +44,7 @@ var DB = (function() {
     load: function(cb) {
       if (this.db)
         return cb.call(this, null, this.db);
-      var request = indexedDB.open(this.options.dbname, this.options.dbversion);
+      var request = indexedDB.open(this.options.dbname, this.options.version);
       request.onblocked = function(event) {
         cb.call(this, event.target.error);
       }.bind(this);
