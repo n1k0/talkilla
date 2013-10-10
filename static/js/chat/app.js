@@ -1,31 +1,10 @@
-/*global AppPort, WebRTC*/
+/*global app, AppPort, WebRTC*/
 /* jshint unused: false */
 /**
  * Talkilla application.
  */
-var ChatApp = (function($, Backbone, _) {
+var ChatApp = (function(app, $, Backbone, _) {
   "use strict";
-
-  /**
-   * Application object
-   * @type {Object}
-   */
-  var app = window.app = {
-    // default options
-    options: {},
-
-    // app modules
-    data: {},
-    models: {},
-    port: {},
-    media: {},
-    views: {},
-    utils: {},
-
-    start: function(options) {
-      _.extend(this.options, options || {});
-    }
-  };
 
   function ChatApp() {
     this.port = new AppPort();
@@ -99,27 +78,27 @@ var ChatApp = (function($, Backbone, _) {
     });
 
     // User events
-    this.user.on('signout', this._onUserSignout.bind(this));
+    this.user.on('signout', this._onUserSignout, this);
 
     // Incoming events
     this.port.on('talkilla.conversation-open',
-                 this._onConversationOpen.bind(this));
+                 this._onConversationOpen, this);
     this.port.on('talkilla.conversation-incoming',
-                 this._onIncomingConversation.bind(this));
+                 this._onIncomingConversation, this);
     this.port.on('talkilla.call-establishment',
-                 this._onCallEstablishment.bind(this));
-    this.port.on('talkilla.call-hangup', this._onCallShutdown.bind(this));
-    this.port.on('talkilla.user-joined', this._onUserJoined.bind(this));
-    this.port.on('talkilla.user-left', this._onUserLeft.bind(this));
+                 this._onCallEstablishment, this);
+    this.port.on('talkilla.call-hangup', this._onCallShutdown, this);
+    this.port.on('talkilla.user-joined', this._onUserJoined, this);
+    this.port.on('talkilla.user-left', this._onUserLeft, this);
 
     // Outgoing events
-    this.call.on('send-offer', this._onSendOffer.bind(this));
-    this.textChat.on('send-offer', this._onSendOffer.bind(this));
-    this.call.on('send-answer', this._onSendAnswer.bind(this));
-    this.textChat.on('send-answer', this._onSendAnswer.bind(this));
-    this.call.on('send-timeout', this._onSendTimeout.bind(this));
-    this.call.on('send-hangup', this._onCallHangup.bind(this));
-    this.call.on('transition:accept', this._onCallAccepted.bind(this));
+    this.call.on('send-offer', this._onSendOffer, this);
+    this.textChat.on('send-offer', this._onSendOffer, this);
+    this.call.on('send-answer', this._onSendAnswer, this);
+    this.textChat.on('send-answer', this._onSendAnswer, this);
+    this.call.on('send-timeout', this._onSendTimeout, this);
+    this.call.on('send-hangup', this._onCallHangup, this);
+    this.call.on('transition:accept', this._onCallAccepted, this);
 
     // Internal events
     window.addEventListener("unload", this._onWindowClose.bind(this));
@@ -235,4 +214,4 @@ var ChatApp = (function($, Backbone, _) {
   };
 
   return ChatApp;
-})(jQuery, Backbone, _);
+})(app, jQuery, Backbone, _);

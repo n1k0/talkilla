@@ -1,9 +1,6 @@
-/*global chai, sinon, _currentUserData:true, currentConversation:true,
-  UserData, browserPort:true, storeContact:true, Conversation,
-  currentUsers: true */
+/*global expect, sinon, _currentUserData:true, currentConversation:true,
+  UserData, browserPort:true, contactsDb, Conversation, tkWorker */
 /* jshint expr:true */
-
-var expect = chai.expect;
 
 describe("Conversation", function() {
   var sandbox;
@@ -46,9 +43,9 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(window, "storeContact");
+      sandbox.stub(contactsDb, "add");
       _currentUserData = new UserData({_userName: "romain"});
-      currentUsers = {
+      tkWorker.currentUsers = {
         florian: { presence: "connected" }
       };
       port = {
@@ -61,7 +58,7 @@ describe("Conversation", function() {
 
     afterEach(function() {
       _currentUserData = undefined;
-      currentUsers = {};
+      tkWorker.currentUsers = {};
       port = undefined;
     });
 
@@ -115,7 +112,7 @@ describe("Conversation", function() {
 
         currentConversation.windowOpened(port);
 
-        sinon.assert.calledOnce(storeContact);
+        sinon.assert.calledOnce(contactsDb.add);
       });
 
     it("should send peer presence information", function() {
@@ -135,7 +132,7 @@ describe("Conversation", function() {
 
     beforeEach(function() {
       // Avoid touching the contacts db which we haven't initialized.
-      sandbox.stub(window, "storeContact");
+      sandbox.stub(contactsDb, "add");
       _currentUserData = new UserData({_userName: "romain"});
       port = {
         postEvent: sandbox.spy()
@@ -144,7 +141,7 @@ describe("Conversation", function() {
         peer: "florian"
       };
 
-      currentUsers = {
+      tkWorker.currentUsers = {
         florian: { presence: "connected" }
       };
 

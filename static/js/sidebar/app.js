@@ -1,34 +1,15 @@
-/*global AppPort*/
+/*global app, AppPort, GoogleContacts */
 /* jshint unused: false */
 /**
  * Sidebar application.
  */
-var SidebarApp = (function($, Backbone, _) {
+var SidebarApp = (function(app, $) {
   "use strict";
-
-  /**
-   * Application object
-   * @type {Object}
-   */
-  var app = window.app = {
-    // default options
-    options: {},
-
-    // app modules
-    models: {},
-    views: {},
-    utils: {},
-
-    start: function(options) {
-      _.extend(this.options, options || {});
-    }
-  };
-
-  // Add event support to the app
-  _.extend(app, Backbone.Events);
 
   function SidebarApp(options) {
     options = options || {};
+
+    this.appStatus = new app.models.AppStatus();
 
     this.port = new AppPort();
 
@@ -36,9 +17,17 @@ var SidebarApp = (function($, Backbone, _) {
 
     this.users = new app.models.UserSet();
 
+    this.services = {
+      google: new GoogleContacts({
+        port: this.port
+      })
+    };
+
     this.view = new app.views.AppView({
+      appStatus: this.appStatus,
       user: this.user,
-      users: this.users
+      users: this.users,
+      services: this.services
     });
 
     navigator.id.watch({
@@ -48,24 +37,29 @@ var SidebarApp = (function($, Backbone, _) {
     });
 
     // user events
-    this.user.on("signout", this._onUserSignout.bind(this));
+    this.user.on("signout", this._onUserSignout, this);
 
     // port events
-    this.port.on('talkilla.users', this._onUserListReceived.bind(this));
-    this.port.on("talkilla.login-success", this._onLoginSuccess.bind(this));
-    this.port.on("talkilla.login-failure", this._onLoginFailure.bind(this));
-    this.port.on("talkilla.logout-success", this._onLogoutSuccess.bind(this));
-    this.port.on("talkilla.error", this._onError.bind(this));
-    this.port.on("talkilla.websocket-error", this._onWebSocketError.bind(this));
+    this.port.on('talkilla.users', this._onUserListReceived, this);
+    this.port.on("talkilla.login-success", this._onLoginSuccess, this);
+    this.port.on("talkilla.login-failure", this._onLoginFailure, this);
+    this.port.on("talkilla.logout-success", this._onLogoutSuccess, this);
+    this.port.on("talkilla.error", this._onError, this);
+    this.port.on("talkilla.websocket-error", this._onWebSocketError, this);
     this.port.on("talkilla.presence-unavailable",
-                 this._onPresenceUnavailable.bind(this));
+                 this._onPresenceUnavailable, this);
     this.port.on("talkilla.chat-window-ready",
-                 this._onChatWindowReady.bind(this));
+                 this._onChatWindowReady, this);
+    this.port.on("talkilla.worker-ready", this._onWorkerReady, this);
 
     this.port.postEvent("talkilla.sidebar-ready");
 
     this._setupDebugLogging();
   }
+
+  SidebarApp.prototype._onWorkerReady = function() {
+    this.appStatus.set("workerInitialized", true);
+  };
 
   SidebarApp.prototype._login = function(assertion) {
     console.log("Logged in: " + this.user.isLoggedIn());
@@ -166,4 +160,4 @@ var SidebarApp = (function($, Backbone, _) {
   };
 
   return SidebarApp;
-})(jQuery, Backbone, _);
+})(app, jQuery);

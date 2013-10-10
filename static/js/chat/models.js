@@ -80,10 +80,10 @@
      * - audio: set to true to enable audio
      */
     start: function(constraints) {
+      this.set('currentConstraints', constraints);
+
       if (this.media.state.current === 'ongoing')
         return this.upgrade(constraints);
-
-      this.set('currentConstraints', constraints);
 
       this._startCall(this.get('currentConstraints'));
     },
@@ -444,9 +444,9 @@
         throw new Error('TextChat model needs a `peer` option');
       this.peer = options.peer;
 
-      this.media.on('dc:message-in', this._onDcMessageIn.bind(this));
-      this.on('add', this._onTextChatEntryCreated.bind(this));
-      this.on('add', this._onFileTransferCreated.bind(this));
+      this.media.on('dc:message-in', this._onDcMessageIn, this);
+      this.on('add', this._onTextChatEntryCreated, this);
+      this.on('add', this._onFileTransferCreated, this);
 
       this.media.on('dc:close', function() {
         this.terminate().reset();

@@ -11,6 +11,7 @@ describe("AppView", function() {
       sandbox.stub(app.views, "NotificationsView");
       sandbox.stub(app.views, "LoginView");
       sandbox.stub(app.views, "UsersView");
+      sandbox.stub(app.views, "ImportContactsView");
     });
 
     afterEach(function() {
@@ -18,16 +19,22 @@ describe("AppView", function() {
     });
 
     describe("required parameters", function() {
+      it("should require an appStatus parameter", function() {
+        expect(function() {
+          new app.views.AppView({users: [], user: []});
+        }).to.Throw(/appStatus/);
+      });
+
       it("should require a user parameter", function() {
         expect(function() {
-          new app.views.AppView({users: []});
-        }).to.Throw(Error);
+          new app.views.AppView({users: [], appStatus: []});
+        }).to.Throw(/user/);
       });
 
       it("should require a users parameter", function() {
         expect(function() {
-          new app.views.AppView({user: {}});
-        }).to.Throw(Error);
+          new app.views.AppView({user: {}, appStatus: []});
+        }).to.Throw(/users/);
       });
     });
 
@@ -35,7 +42,7 @@ describe("AppView", function() {
       var appView;
 
       beforeEach(function() {
-        appView = new app.views.AppView({user: {}, users: []});
+        appView = new app.views.AppView({user: {}, users: [], appStatus: []});
       });
 
       it("should add initialize a notifications property", function() {

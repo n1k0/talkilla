@@ -79,6 +79,8 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.assertOngoingCall(self.bob)
         self.assertOngoingCall(self.larry)
 
+        self.bob.hangupCall()
+
     def test_video_call_timeout(self):
         self.bob.signin()
         self.larry.signin()
@@ -151,6 +153,18 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
 
         self.larry.signout()
         self.assertPresenceIconDisconnected(self.bob)
+
+    def test_local_video_visible_to_call_upgrader(self):
+        self.bob.signin()
+        self.larry.signin()
+
+        self.bob.openConversationWith("larry").sendChatMessage("let's chat!")
+
+        self.larry.switchToChatWindow().startCall(True)
+
+        self.bob.acceptCall()
+
+        self.assertElementVisible(self.larry, "#local-video")
 
 
 if __name__ == "__main__":

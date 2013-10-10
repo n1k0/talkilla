@@ -17,12 +17,15 @@
         throw new Error("missing parameter: user");
       if (!options.users)
         throw new Error("missing parameter: users");
+      if (!options.appStatus)
+        throw new Error("missing parameter: appStatus");
 
       this.notifications = new app.views.NotificationsView({
         user: options.user
       });
 
       this.login = new app.views.LoginView({
+        appStatus: options.appStatus,
         user: options.user
       });
 
@@ -30,11 +33,17 @@
         user: options.user,
         collection: options && options.users
       });
+
+      this.importButton = new app.views.ImportContactsView({
+        user: options.user,
+        service: options.services && options.services.google
+      });
     },
 
     render: function() {
       this.login.render();
       this.users.render();
+      this.importButton.render();
       return this;
     }
   });
@@ -203,11 +212,12 @@
       else
         this.$el.hide();
       // show/hide invite if user is alone
-      if (this.collection.length === 1) {
+      if (this.user.isLoggedIn() && this.collection.length === 1) {
         if (!this.activeNotification)
           this.activeNotification =
             app.utils.notifyUI('You are the only person logged in, ' +
-                                'invite your friends.', 'info');
+                                'invite your friends or load your existing ' +
+                                'contacts (see below).', 'info');
       }
       else {
         if (this.activeNotification)
@@ -233,19 +243,20 @@
       options = options || {};
       if (!options.user)
         throw new Error("missing parameter: user");
+      if (!options.appStatus)
+        throw new Error("missing parameter: appStatus");
       this.user = options.user;
+      this.appStatus = options.appStatus;
 
       this.user.on('change', this.render, this);
-
-      // Display the correct buttons now we've loaded.
-      // XXX We should probably delay this until after
-      // navigator.id.watch completes, but we need to work
-      // out full mechanisms and flows for what happens there.
-      this.render();
+      this.appStatus.on('change:workerInitialized', this.render, this);
     },
 
     render: function() {
-      if (!this.user.get("nick")) {
+      if (!this.appStatus.get('workerInitialized')) {
+        this.$('#signin').hide();
+        this.$('#signout').hide();
+      } else if (!this.user.get("nick")) {
         this.$('#signin').show();
         this.$('#signout').hide().find('.nick').text('');
       } else {
@@ -273,6 +284,37 @@
     signout: function(event) {
       event.preventDefault();
       navigator.id.logout();
+    }
+  });
+
+  app.views.ImportContactsView = Backbone.View.extend({
+    el: "#import-contacts",
+
+    events: {
+      "click button": 'loadGoogleContacts'
+    },
+
+    initialize: function(options) {
+      options = options || {};
+      if (!options.user)
+        throw new Error("missing parameter: user");
+      if (!options.service)
+        throw new Error("missing parameter: service");
+      this.user = options.user;
+      this.service = options.service;
+      this.user.on('signin signout', this.render, this);
+    },
+
+    loadGoogleContacts: function() {
+      this.service.loadContacts();
+    },
+
+    render: function() {
+      if (this.user.isLoggedIn())
+        this.$el.show();
+      else
+        this.$el.hide();
+      return this;
     }
   });
 })(app, Backbone, _);

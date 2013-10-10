@@ -4,6 +4,8 @@
 var expect = chai.expect;
 
 describe("ChatApp", function() {
+  "use strict";
+
   var sandbox, chatApp, AppPortStub;
   var callData = {peer: "bob", peerPresence: "connected"};
   var incomingCallData = {
@@ -29,7 +31,6 @@ describe("ChatApp", function() {
     AppPortStub = _.extend({postEvent: sinon.spy()}, Backbone.Events);
     sandbox = sinon.sandbox.create();
     sandbox.stub(window, "AppPort").returns(AppPortStub);
-    sandbox.stub(window, "addEventListener");
     sandbox.stub(window, "Audio").returns({
       play: sandbox.stub(),
       pause: sandbox.stub()
@@ -69,7 +70,6 @@ describe("ChatApp", function() {
   });
 
   function assertEventTriggersHandler(event, handler, data) {
-    "use strict";
 
     // need to stub the prototype so that the stub happens before
     // the constructor bind()s the method
@@ -84,7 +84,6 @@ describe("ChatApp", function() {
 
   it("should attach _onConversationOpen to talkilla.conversation-open",
     function() {
-      "use strict";
       assertEventTriggersHandler("talkilla.conversation-open",
         "_onConversationOpen", callData);
     });
@@ -117,8 +116,6 @@ describe("ChatApp", function() {
   });
 
   function assertModelEventTriggersHandler(event, handler) {
-    "use strict";
-
     // need to stub the prototype so that the stub happens before
     // the constructor bind()s the method
     sandbox.stub(ChatApp.prototype, handler);
@@ -153,19 +150,7 @@ describe("ChatApp", function() {
         "talkilla.chat-window-ready", {});
     });
 
-  it("should attach _onWindowClose to unload on window", function(done) {
-    window.addEventListener.restore();
-    sandbox.stub(ChatApp.prototype._onWindowClose, "bind")
-      .returns(ChatApp.prototype._onWindowClose);
-    sandbox.stub(window, "addEventListener", function(event, handler) {
-      expect(handler).to.equal(ChatApp.prototype._onWindowClose);
-      done();
-    });
-    chatApp = new ChatApp();
-  });
-
   it("should initialize the callEstablishView property", function() {
-    "use strict";
     sandbox.stub(app.views, "CallEstablishView");
     chatApp = new ChatApp();
     expect(chatApp.callEstablishView).
@@ -192,8 +177,6 @@ describe("ChatApp", function() {
     var callFixture;
 
     beforeEach(function() {
-      "use strict";
-
       callFixture = $('<div id="call"></div>');
       $("#fixtures").append(callFixture);
 
@@ -211,7 +194,6 @@ describe("ChatApp", function() {
     });
 
     afterEach(function() {
-      "use strict";
       $("#fixtures").empty();
     });
 
@@ -363,18 +345,6 @@ describe("ChatApp", function() {
       });
     });
 
-    describe("#_onWindowClose", function() {
-
-      it("should hangup the call if necessary", function() {
-        sandbox.stub(chatApp.call, "hangup");
-
-        chatApp._onWindowClose();
-
-        sinon.assert.called(chatApp.call.hangup);
-        sinon.assert.calledWith(chatApp.call.hangup);
-      });
-    });
-
     describe("#_onSendOffer", function() {
       var offer;
 
@@ -438,6 +408,22 @@ describe("ChatApp", function() {
         chatApp._onUserLeft("niko");
 
         expect(chatApp.peer.get("presence")).eql("disconnected");
+      });
+    });
+
+    describe("Events", function() {
+      describe("unload", function() {
+        it("should hangup the call", function() {
+          sandbox.stub(chatApp.call, "hangup");
+
+          var unloadEvent = document.createEvent("Event");
+          unloadEvent.initEvent("unload", false, false);
+
+          window.dispatchEvent(unloadEvent);
+
+          sinon.assert.called(chatApp.call.hangup);
+          sinon.assert.calledWith(chatApp.call.hangup);
+        });
       });
     });
 
