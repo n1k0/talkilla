@@ -62,7 +62,6 @@ var SidebarApp = (function(app, $) {
   };
 
   SidebarApp.prototype._login = function(assertion) {
-    console.log("Logged in: " + this.user.isLoggedIn());
     if (!this.user.isLoggedIn())
       this.port.postEvent('talkilla.login', {assertion: assertion});
   };
