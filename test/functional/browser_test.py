@@ -36,6 +36,7 @@ def debug_on(*exceptions):
         return wrapper
     return decorator
 
+
 # Utility function to aid debugging. Call this in a try/except/raise block
 # to get a url dumped which is a screenshot of the frame that the driver is
 # showing.
