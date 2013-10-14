@@ -160,8 +160,12 @@ class Driver(WebDriver):
 
     def switchToSidebar(self):
         """Switches to the Social API sidebar."""
-        return self.switchToFrame("//#social-sidebar-browser",
-                                  BASE_APP_URL + "/sidebar.html")
+        try:
+            return self.switchToFrame("//#social-sidebar-browser",
+                                      BASE_APP_URL + "/sidebar.html")
+        except:
+            output_base64_screenshot(self)
+            raise
 
     def waitForElement(self, css_selector, timeout=DEFAULT_WAIT_TIMEOUT,
                        visible=None):
