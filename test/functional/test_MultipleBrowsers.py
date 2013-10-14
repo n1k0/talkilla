@@ -24,15 +24,19 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.assertCallTimedOut(self.bob)
 
         # Now try calling back
-        self.larry.openConversationWith("bob").startCall(True)
-        self.assertPendingOutgoingCall(self.larry)
+        try:
+            self.larry.openConversationWith("bob").startCall(True)
+            self.assertPendingOutgoingCall(self.larry)
 
-        self.bob.switchToChatWindow()
-        self.assertIncomingCall(self.bob)
-        self.bob.acceptCall()
+            self.bob.switchToChatWindow()
+            self.assertIncomingCall(self.bob)
+            self.bob.acceptCall()
 
-        self.assertOngoingCall(self.bob)
-        self.assertOngoingCall(self.larry)
+            self.assertOngoingCall(self.bob)
+            self.assertOngoingCall(self.larry)
+        except:
+            output_base64_screenshot(self.bob)
+            output_base64_screenshot(self.larry)
 
     def test_signin_users(self):
         self.bob.signin()
