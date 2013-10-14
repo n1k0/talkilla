@@ -37,6 +37,7 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         except:
             output_base64_screenshot(self.bob)
             output_base64_screenshot(self.larry)
+            raise
 
     def test_signin_users(self):
         self.bob.signin()
@@ -89,8 +90,12 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.bob.openConversationWith("larry").startCall(True)
         self.assertPendingOutgoingCall(self.bob)
 
-        self.larry.switchToChatWindow()
-        self.assertIncomingCall(self.larry)
+        try:
+            self.larry.switchToChatWindow()
+            self.assertIncomingCall(self.larry)
+        except:
+            output_base64_screenshot(self.bob)
+            raise
 
         self.assertCallTimedOut(self.bob)
 
@@ -104,18 +109,23 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.larry.switchToChatWindow()
         self.assertIncomingCall(self.larry)
 
-        self.assertCallTimedOut(self.bob)
+        try:
+            self.assertCallTimedOut(self.bob)
 
-        # Now try calling a second time
-        self.bob.restartCall()
-        self.assertPendingOutgoingCall(self.bob)
+            # Now try calling a second time
+            self.bob.restartCall()
+            self.assertPendingOutgoingCall(self.bob)
 
-        self.larry.switchToChatWindow()
-        self.assertIncomingCall(self.larry)
-        self.larry.acceptCall()
+            self.larry.switchToChatWindow()
+            self.assertIncomingCall(self.larry)
+            self.larry.acceptCall()
 
-        self.assertOngoingCall(self.bob)
-        self.assertOngoingCall(self.larry)
+            self.assertOngoingCall(self.bob)
+            self.assertOngoingCall(self.larry)
+        except:
+            output_base64_screenshot(self.bob)
+            output_base64_screenshot(self.larry)
+            raise
 
     def test_video_call_ignored(self):
         self.bob.signin()

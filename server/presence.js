@@ -130,7 +130,7 @@ api = {
 
     data.peer = nick;
     peer.send({'incoming_call': data});
-    logger.info({type: "call:offer"});
+    logger.info({type: "call:offer", peer: data.peer});
   },
 
   callAccepted: function(req, res) {
@@ -148,7 +148,7 @@ api = {
 
     data.peer = nick;
     peer.send({'call_accepted': data});
-    logger.info({type: "call:accepted"});
+    logger.info({type: "call:accepted", peer: data.peer});
   },
 
   callHangup: function(req, res) {
@@ -166,7 +166,7 @@ api = {
 
     data.peer = nick;
     peer.send({'call_hangup': data});
-    logger.info({type: "call:hangup"});
+    logger.info({type: "call:hangup", peer: data.peer});
   },
 
   presenceRequest: function(req, res) {
