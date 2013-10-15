@@ -132,6 +132,7 @@ class Driver(WebDriver):
             print "self.current_url = ", current_url, " ", expected_url
 
             if current_url != expected_url:
+                print "self.current_url real = ", self.current_url
                 # getting here may have been caused by the previous wait having
                 # been called too soon before the server switched to the right
                 # document.  Do it again, just in case.
@@ -169,6 +170,7 @@ class Driver(WebDriver):
                                       BASE_APP_URL + "/sidebar.html")
         except:
             output_base64_screenshot(self)
+            print "url is ", self.current_url
             raise
 
     def waitForElement(self, css_selector, timeout=DEFAULT_WAIT_TIMEOUT,
