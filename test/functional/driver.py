@@ -33,10 +33,15 @@ class Driver(WebDriver):
             Args:
             - nick: Peer username
         """
-        self.switchToSidebar()
-        nicks = self.waitForElements("ul.nav-list>li>a", visible=True)
-        filter(lambda e: e.text == nick, nicks)[0].click()
-        return self.switchToChatWindow()
+        try:
+            self.switchToSidebar()
+            nicks = self.waitForElements("ul.nav-list>li>a", visible=True)
+            filter(lambda e: e.text == nick, nicks)[0].click()
+            return self.switchToChatWindow()
+        except:
+            output_base64_screenshot(self)
+            raise
+
 
     def clickElement(self, css_selector):
         """ Clicks the element matching the provided CSS selector."""
