@@ -168,14 +168,18 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
     def test_local_video_visible_to_call_upgrader(self):
         self.bob.signin()
         self.larry.signin()
+        try:
+            self.bob.openConversationWith("larry").sendChatMessage("let's chat!")
 
-        self.bob.openConversationWith("larry").sendChatMessage("let's chat!")
+            self.larry.switchToChatWindow().startCall(True)
 
-        self.larry.switchToChatWindow().startCall(True)
+            self.bob.acceptCall()
 
-        self.bob.acceptCall()
-
-        self.assertElementVisible(self.larry, "#local-video")
+            self.assertElementVisible(self.larry, "#local-video")
+        except:
+            output_base64_screenshot(self.bob)
+            output_base64_screenshot(self.larry)
+            raise
 
 
 if __name__ == "__main__":
