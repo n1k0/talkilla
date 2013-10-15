@@ -118,8 +118,10 @@ class Driver(WebDriver):
 
             Returns: Driver
         """
+        print "Waiting for frame ", locator
         wait = WebDriverWait(self, timeout)
         wait.until(EC.frame_to_be_available_and_switch_to_it(locator))
+        print "Done waiting for locator"
 
         def wait_for_correct_document(_):
 
@@ -127,7 +129,7 @@ class Driver(WebDriver):
 
             # if frame switches are failing, uncomment the following line to
             # help debug:
-            #print "self.current_url = ", current_url
+            print "self.current_url = ", current_url, " ", expected_url
 
             if current_url != expected_url:
                 # getting here may have been caused by the previous wait having
@@ -147,10 +149,12 @@ class Driver(WebDriver):
 
             return True
 
+        print "waiting for expected url ", expected_url
         msg = u"timed out waiting for %s to be %s after %ss seconds" % (
             locator, expected_url, timeout)
         WebDriverWait(self, timeout, poll_frequency=.25).until(
             wait_for_correct_document, message=msg)
+        print "done wait for url"
         return self
 
     def switchToChatWindow(self):
