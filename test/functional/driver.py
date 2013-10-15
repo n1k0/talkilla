@@ -132,6 +132,7 @@ class Driver(WebDriver):
             print "self.current_url = ", current_url, " ", expected_url
 
             if current_url != expected_url:
+                print "not yet frame!"
                 # getting here may have been caused by the previous wait having
                 # been called too soon before the server switched to the right
                 # document.  Do it again, just in case.
@@ -143,7 +144,7 @@ class Driver(WebDriver):
                 # unnecessary.  yuck.  ideally, Marionette won't have this
                 # problem, and when we switch to it, we'll be able to ditch
                 # this nested wait.  we'll see).
-                wait2 = WebDriverWait(self, timeout)
+                wait2 = WebDriverWait(self, DEFAULT_WAIT_TIMEOUT / 5)
                 wait2.until(EC.frame_to_be_available_and_switch_to_it(locator))
                 return False
 
@@ -213,6 +214,9 @@ class Driver(WebDriver):
             Returns: List of DOM elements
         """
         def get_element_checker(driver, visible):
+            if css_selector == "#call":
+                output_base64_screenshot(driver)
+
             locator = (By.CSS_SELECTOR, css_selector)
             if visible is True:
                 return EC.visibility_of_element_located(locator)
