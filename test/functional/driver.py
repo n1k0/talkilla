@@ -102,7 +102,7 @@ class Driver(WebDriver):
         input_text.send_keys(Keys.RETURN)
 
     def switchToFrame(self, locator, expected_url,
-                      timeout=DEFAULT_WAIT_TIMEOUT):
+                      timeout=(DEFAULT_WAIT_TIMEOUT*2)):
         """ Wait for a frame to become available, then switch to it.
 
             Args:
@@ -132,7 +132,6 @@ class Driver(WebDriver):
             print "self.current_url = ", current_url, " ", expected_url
 
             if current_url != expected_url:
-                print "self.current_url real = ", self.current_url
                 # getting here may have been caused by the previous wait having
                 # been called too soon before the server switched to the right
                 # document.  Do it again, just in case.
