@@ -1,4 +1,4 @@
-/*global StateMachine, tnetbin */
+/*global StateMachine, tnetbin, mozRTCIceCandidate */
 
 (function(exports) {
   "use strict";
@@ -14,7 +14,9 @@
    * @param {Object}                   options  Options
    */
   function WebRTC(options) {
+    // pc is for "peer connection"
     this.pc = undefined;
+    // dc is for "data channel"
     this.dc = undefined;
     this._constraints = {};
     this.options = options || {};
@@ -173,6 +175,16 @@
           ._addLocalStream(localStream)
           ._prepareAnswer(offer);
     });
+  };
+
+  /**
+   * Adds an ice candidate to the peer connection.
+   * @param {Object} candidate Object containing the data for a
+   *                           mozRTCIceCandidate.
+   */
+  WebRTC.prototype.addIceCandidate = function(candidate) {
+    if (candidate)
+      this.pc.addIceCandidate(new mozRTCIceCandidate(candidate));
   };
 
   /**
@@ -362,11 +374,47 @@
 
   /**
    * Executed when the ICE connection state changes.
-   * @return {Event} event
+   *
+   * Emits the `ice:change` event with the new state name as a parameter, and
+   * one of these depending on the new connection state:
+   * - ice:new
+   * - ice:checking
+   * - ice:connected
+   * - ice:completed
+   * - ice:failed
+   * - ice:disconnected
+   * - ice:closed
+   *
+   * @link http://www.w3.org/TR/webrtc/#h4_rtciceconnectionstate-enum
    */
   WebRTC.prototype._onIceConnectionStateChange = function() {
     this.trigger('ice:' + this.pc.iceConnectionState);
     this.trigger('ice:change', this.pc.iceConnectionState);
+  };
+
+  /**
+   * Executed when an ICE candidate is received.
+   * @param  {mozRTCIceCandidate} event.candidate
+   * @event  `ice:candidate-ready` {Object}
+   */
+  WebRTC.prototype._onIceCandidate = function(event) {
+    // The last candidate event is a null event, we let this be transmitted
+    // to the SPA, and possibly the other side as this allows the SPA to
+    // reconstruct ICE candidates into the SDP in the case of the SP not
+    // supporting trickle ICE.
+    if (event) {
+      this.trigger('ice:candidate-ready',
+        // XXX Manually convert event.candidate until bug 928304 is
+        // incorporated in all versions we support, i.e. Firefox 27.0a2
+        // onwards. This is due to mozRTCIceCandidate not having supported
+        // serialization previously.
+        event.candidate ? {
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex
+        } : null
+      );
+    }
   };
 
   /**
@@ -454,6 +502,7 @@
 
     this.pc.onaddstream = this._onAddStream.bind(this);
     this.pc.ondatachannel = this._onDataChannel.bind(this);
+    this.pc.onicecandidate = this._onIceCandidate.bind(this);
     this.pc.oniceconnectionstatechange =
       this._onIceConnectionStateChange.bind(this);
     this.pc.onremovestream = this._onRemoveStream.bind(this);
@@ -472,11 +521,7 @@
       // way we know exactly which channel we're expecting to communicate
       // with.
       id: id,
-      negotiated: true,
-      // Stream and preset parameters enable backwards compatibility
-      // from Firefox 24 until bug 892441 is fixed.
-      stream: id,
-      preset: true
+      negotiated: true
     });
 
     dc.onopen  = this.trigger.bind(this, "dc:ready", dc);

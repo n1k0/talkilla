@@ -14,13 +14,17 @@ describe("TalkillaSPA", function() {
   describe("#_onServerEvent", function() {
 
     it("should post a connect event to the port", function() {
-      var event = "fake event";
+      spa.email = "foo";
       sandbox.stub(spa.port, "post");
 
-      spa.server.trigger("connected", event);
+      spa.server.trigger("connected");
 
       sinon.assert.calledOnce(spa.port.post);
-      sinon.assert.calledWithExactly(spa.port.post, "connected", "fake event");
+      sinon.assert.calledWithExactly(
+        spa.port.post, "connected", {
+          addresses: [{type: "email", value: "foo"}]
+        }
+      );
     });
 
     it("should post a disconnected event to the port", function() {
@@ -32,6 +36,15 @@ describe("TalkillaSPA", function() {
       sinon.assert.calledOnce(spa.port.post);
       sinon.assert.calledWithExactly(
         spa.port.post, "disconnected", "fake event");
+    });
+
+    it("should post a reauth-needed event to the port", function() {
+      sandbox.stub(spa.port, "post");
+
+      spa.server.trigger("unauthorized");
+
+      sinon.assert.calledOnce(spa.port.post);
+      sinon.assert.calledWithExactly(spa.port.post, "reauth-needed");
     });
 
   });
@@ -54,67 +67,15 @@ describe("TalkillaSPA", function() {
   describe("#_onConnect", function() {
 
     it("should connect to the server", function() {
-      var event = {nick: "foo"};
       sandbox.stub(spa.server, "connect");
 
-      spa.port.trigger("connect", event);
+      // The Talkilla SPA doesn't need any credentials. This is
+      // handled via cookies.
+      spa.port.trigger("connect", {some: "credentials"});
 
       sinon.assert.calledOnce(spa.server.connect);
-      sinon.assert.calledWithExactly(spa.server.connect, "foo");
+      sinon.assert.calledWithExactly(spa.server.connect);
     });
-
-  });
-
-  describe("#_onAutoconnect", function() {
-
-    it("should autoconnect to the server", function() {
-      var event = {nick: "foo"};
-      sandbox.stub(spa.server, "autoconnect");
-
-      spa.port.trigger("autoconnect", event);
-
-      sinon.assert.calledOnce(spa.server.autoconnect);
-      sinon.assert.calledWithExactly(spa.server.autoconnect, "foo");
-    });
-
-  });
-
-  describe("#_onSignin", function() {
-
-    it("should signin to the server and post back the result", function(done) {
-      sandbox.stub(spa.server, "signin", function(assertion, callback) {
-        expect(assertion).to.equal("fake assertion");
-        callback("foo", "bar");
-
-        sinon.assert.calledOnce(spa.port.post);
-        sinon.assert.calledWithExactly(
-          spa.port.post, "signin-callback", {err: "foo", response: "bar"});
-        done();
-      });
-      sandbox.stub(spa.port, "post");
-
-      spa.port.trigger("signin", {assertion: "fake assertion"});
-    });
-
-  });
-
-  describe("#_onSignout", function() {
-
-    it("should signout to the server and post back the result",
-      function(done) {
-        sandbox.stub(spa.server, "signout", function(nick, callback) {
-          expect(nick).to.equal("foo");
-          callback("foo", "bar");
-
-          sinon.assert.calledOnce(spa.port.post);
-          sinon.assert.calledWithExactly(
-            spa.port.post, "signout-callback", {err: "foo", response: "bar"});
-          done();
-        });
-        sandbox.stub(spa.port, "post");
-
-        spa.port.trigger("signout", {nick: "foo"});
-      });
 
   });
 
@@ -130,7 +91,7 @@ describe("TalkillaSPA", function() {
         });
         sandbox.stub(spa.port, "post");
 
-        spa.port.trigger("offer", {offer: "fake offer data", to: "foo"});
+        spa.port.trigger("offer", {offer: "fake offer data", peer: "foo"});
       });
 
   });
@@ -150,7 +111,7 @@ describe("TalkillaSPA", function() {
 
         spa.port.trigger("answer", {
           answer: "fake answer data",
-          to: "foo"
+          peer: "foo"
         });
       });
 
@@ -166,8 +127,29 @@ describe("TalkillaSPA", function() {
         });
         sandbox.stub(spa.port, "post");
 
-        spa.port.trigger("hangup", {to: "foo"});
+        spa.port.trigger("hangup", {peer: "foo"});
       });
 
   });
+
+  describe("#_onIceCandidate", function() {
+
+    it("should send an iceCandidate to the server",
+      function(done) {
+        var candidate = {
+          candidate: "dummy"
+        };
+
+        sandbox.stub(spa.server, "iceCandidate", function(data) {
+          expect(data.peer).to.equal("foo");
+          expect(data.candidate).to.equal(candidate);
+          done();
+        });
+        sandbox.stub(spa.port, "post");
+
+        spa.port.trigger("ice:candidate", {peer: "foo", candidate: candidate});
+      });
+
+  });
+
 });

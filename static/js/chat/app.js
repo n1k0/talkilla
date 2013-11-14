@@ -88,6 +88,7 @@ var ChatApp = (function(app, $, Backbone, _) {
     this.port.on('talkilla.call-establishment',
                  this._onCallEstablishment, this);
     this.port.on('talkilla.call-hangup', this._onCallShutdown, this);
+    this.port.on('talkilla.ice-candidate', this._onIceCandidate, this);
     this.port.on('talkilla.user-joined', this._onUserJoined, this);
     this.port.on('talkilla.user-left', this._onUserLeft, this);
 
@@ -99,6 +100,9 @@ var ChatApp = (function(app, $, Backbone, _) {
     this.call.on('send-timeout', this._onSendTimeout, this);
     this.call.on('send-hangup', this._onCallHangup, this);
     this.call.on('transition:accept', this._onCallAccepted, this);
+    // As we can get ice candidates for calls or text chats, just get this
+    // straight from the media model.
+    this.webrtc.on('ice:candidate-ready', this._onIceCandidateReady, this);
 
     // Internal events
     window.addEventListener("unload", this._onWindowClose.bind(this));
@@ -137,46 +141,80 @@ var ChatApp = (function(app, $, Backbone, _) {
     if (!data.upgrade)
       this.peer.set({nick: data.peer, presence: data.peerPresence});
 
-    var options = _.extend(WebRTC.parseOfferConstraints(data.offer), {
-      offer: data.offer,
-      textChat: !!data.textChat,
-      upgrade: !!data.upgrade
-    });
-
     // incoming text chat conversation
     if (data.textChat)
-      return this.textChat.answer(options.offer);
+      return this.textChat.answer(data.offer);
 
     // incoming video/audio call
-    this.call.incoming(options);
+    this.call.incoming(new app.payloads.Offer(data));
     this.audioLibrary.play('incoming');
   };
 
-  ChatApp.prototype._onSendOffer = function(data) {
-    this.port.postEvent('talkilla.call-offer', data);
+  ChatApp.prototype._onIceCandidate = function(data) {
+    this.webrtc.addIceCandidate(data.candidate);
   };
 
-  ChatApp.prototype._onSendAnswer = function(data) {
-    this.port.postEvent('talkilla.call-answer', data);
+  /**
+   * Called when initiating a call.
+   *
+   * @param {payloads.Offer} offerMsg the offer to send to initiate the call.
+   */
+  ChatApp.prototype._onSendOffer = function(offerMsg) {
+    this.port.postEvent('talkilla.call-offer', offerMsg.toJSON());
   };
 
-  ChatApp.prototype._onSendTimeout = function(data) {
+  /**
+   * Called when accepting an incoming call.
+   *
+   * @param {payloads.Answer} answerMsg the answer to send to accept the call.
+   */
+  ChatApp.prototype._onSendAnswer = function(answerMsg) {
+    this.port.postEvent('talkilla.call-answer', answerMsg.toJSON());
+  };
+
+  /**
+   * Called when a call times out.
+   *
+   * @param {payloads.Hanging} hangupMsg the hangup to send to stop
+   * the call.
+   *
+   */
+  ChatApp.prototype._onSendTimeout = function(hangupMsg) {
     // Let the peer know that the call offer is no longer valid.
     // For this, we send call-hangup, the same as in the case where
     // the user decides to abandon the call attempt.
-    this.port.postEvent('talkilla.call-hangup', data);
+    this.port.postEvent('talkilla.call-hangup', hangupMsg.toJSON());
+  };
+
+  ChatApp.prototype._onIceCandidateReady = function(candidate) {
+    var iceCandidateMsg = new app.payloads.IceCandidate({
+      peer: this.peer.get("nick"),
+      candidate: candidate
+    });
+    this.port.postEvent('talkilla.ice-candidate', iceCandidateMsg.toJSON());
   };
 
   // Call Hangup
-  ChatApp.prototype._onCallShutdown = function() {
+  ChatApp.prototype._onCallShutdown = function(hangupData) {
+    var hangupMsg = new app.payloads.Hangup(hangupData);
+    if (hangupMsg.callid !== this.call.callid)
+      return;
+
     this.audioLibrary.stop('incoming');
     this.call.hangup(false);
     window.close();
   };
 
-  ChatApp.prototype._onCallHangup = function(data) {
+  /**
+   * Called when hanging up a call.
+   *
+   * @param {payloads.Hanging} hangupMsg the hangup to send to stop
+   * the call.
+   *
+   */
+  ChatApp.prototype._onCallHangup = function(hangupMsg) {
     // Send a message as this is this user's call hangup
-    this.port.postEvent('talkilla.call-hangup', data);
+    this.port.postEvent('talkilla.call-hangup', hangupMsg.toJSON());
     window.close();
   };
 

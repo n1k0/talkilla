@@ -1,12 +1,12 @@
-/*global app, chai, sinon */
-
+/*global app, chai, sinon, payloads, WebRTC */
 /* jshint expr:true */
+
 var expect = chai.expect;
 
 describe("Call Model", function() {
   "use strict";
 
-  var sandbox, call, media, peer;
+  var sandbox, call, media, peer, callData;
 
   beforeEach(function() {
     sandbox = sinon.sandbox.create();
@@ -27,6 +27,17 @@ describe("Call Model", function() {
     peer = new app.models.User();
 
     call = new app.models.Call({}, {media: media, peer: peer});
+
+    callData = new app.payloads.Offer({
+      offer: {
+        sdp: "fake",
+        type: "offer"
+      },
+      callid: 2,
+      peer: "bob",
+      textChat: true,
+      upgrade: false
+    });
   });
 
   afterEach(function() {
@@ -50,11 +61,16 @@ describe("Call Model", function() {
       var call = new app.models.Call({peer: "larry"}, {media: media});
       expect(call.get("peer")).to.equal("larry");
     });
+
+    it("should have a random id", function() {
+      sandbox.stub(app.utils, "id").returns(1);
+      var call = new app.models.Call({}, {media: media, peer: peer});
+      expect(call.callid).to.not.equal(undefined);
+      sinon.assert.calledOnce(app.utils.id);
+    });
   });
 
   describe("#start", function() {
-    var callData = {video: true, audio: true};
-
     it("should change the state from ready to pending", function() {
       call.start({});
       expect(call.state.current).to.equal('pending');
@@ -100,6 +116,11 @@ describe("Call Model", function() {
         expect(call.requiresVideo()).to.equal(true);
       });
 
+    it("should generate a new call id", function() {
+      var oldid = call.callid;
+      call.start({});
+      expect(call.callid).to.not.equal(oldid);
+    });
 
     describe("send-offer", function() {
       var fakeOffer = {peer: "larry", offer: {fake: true}};
@@ -124,8 +145,6 @@ describe("Call Model", function() {
   });
 
   describe("#restart", function() {
-    var callData = {video: true, audio: true};
-
     beforeEach(function() {
       call.start(callData);
       call.timeout();
@@ -178,12 +197,10 @@ describe("Call Model", function() {
   });
 
   describe("#incoming", function() {
-    var callData = {video: true, audio: true};
-
     it("should change the state from ready to incoming", function() {
       call.state.current = 'ready';
 
-      call.incoming({});
+      call.incoming(callData);
 
       expect(call.state.current).to.equal('incoming');
     });
@@ -191,22 +208,36 @@ describe("Call Model", function() {
     it("should change the state from timeout to incoming", function() {
       call.state.current = 'timeout';
 
-      call.incoming({});
+      call.incoming(callData);
 
       expect(call.state.current).to.equal('incoming');
+    });
+
+    it("should store the parsed constraints", function() {
+      var constraints = {video: false, audio: true};
+      sandbox.stub(WebRTC, "parseOfferConstraints").returns(constraints);
+
+      call.incoming(callData);
+
+      expect(call.get("currentConstraints")).to.deep.equal(constraints);
     });
 
     it("should store the call data", function() {
       call.incoming(callData);
 
-      expect(call.get("incomingData")).to.equal(callData);
+      expect(call.get("incomingData").offer).to.equal(callData.offer);
+      expect(call.get("incomingData").textChat).to.equal(callData.textChat);
+      expect(call.get("incomingData").upgrade).to.equal(callData.upgrade);
+    });
+
+    it("should have the same id as the incoming call", function() {
+      call.incoming(callData);
+      expect(call.callid).to.equal(2);
     });
 
   });
 
   describe("#accept", function() {
-    var callData = {video: true, audio: true, peer: "bob", offer: {foo: 42}};
-
     it("should listen to answer-ready from the media", function() {
       call.state.incoming();
       call.accept();
@@ -229,7 +260,7 @@ describe("Call Model", function() {
           done();
         });
 
-        call.incoming({});
+        call.incoming(callData);
         call.accept({});
 
         call.media.trigger("answer-ready", fakeAnswer);
@@ -279,7 +310,7 @@ describe("Call Model", function() {
     beforeEach(function() {
       call.start({});
       call.peer.set("nick", "Mark");
-      sandbox.stub(call, "trigger");
+      call.callid = 2;
     });
 
     it("should change the state from pending to terminated", function() {
@@ -294,18 +325,21 @@ describe("Call Model", function() {
       sinon.assert.calledOnce(media.terminate);
     });
 
-    it("should trigger send-timeout", function() {
-      call.timeout();
+    it("should trigger send-timeout", function(done) {
+      call.on("send-timeout", function(hangupMsg) {
+        expect(hangupMsg instanceof payloads.Hangup).to.equal(true);
+        expect(hangupMsg.peer).to.equal("Mark");
+        expect(call.callid).to.equal(2);
+        done();
+      });
 
-      sinon.assert.called(call.trigger);
-      sinon.assert.calledWithExactly(call.trigger, "send-timeout",
-                                     {peer: "Mark"});
+      call.timeout();
     });
   });
 
   describe("#ignore", function() {
     it("should change the state from incoming to terminated", function() {
-      call.incoming({});
+      call.incoming(callData);
       call.ignore();
       expect(call.state.current).to.equal('terminated');
     });
@@ -359,17 +393,19 @@ describe("Call Model", function() {
       sinon.assert.calledWithExactly(media.terminate);
     });
 
-    it("should trigger send-hangup", function() {
+    it("should trigger send-hangup", function(done) {
       call.start({});
       call.peer.set("nick", "Mark");
+      call.callid = 2;
 
-      sandbox.stub(call, "trigger");
+      call.on("send-hangup", function(hangupMsg) {
+        expect(hangupMsg instanceof payloads.Hangup).to.equal(true);
+        expect(hangupMsg.peer).to.equal("Mark");
+        expect(hangupMsg.callid).to.equal(call.callid);
+        done();
+      });
 
       call.hangup(true);
-
-      sinon.assert.called(call.trigger);
-      sinon.assert.calledWithExactly(call.trigger, "send-hangup",
-                                     {peer: "Mark"});
     });
   });
 
@@ -395,12 +431,13 @@ describe("Call Model", function() {
     });
 
     describe("send-offer", function() {
-      var fakeOffer = {peer: "larry", offer: {fake: true}};
+      var fakeOffer = {offer: {fake: true}};
 
       beforeEach(function() {
         call.state.current = 'ongoing';
         call.media = _.extend(media, Backbone.Events);
         peer.set("nick", "larry");
+        call.id = 2;
 
         call.upgrade({});
       });
@@ -409,6 +446,8 @@ describe("Call Model", function() {
         function(done) {
           call.once("send-offer", function(data) {
             expect(data.offer).to.deep.equal(fakeOffer);
+            expect(data.peer).to.equal(peer.get("nick"));
+            expect(data.callid).to.equal(call.callid);
             done();
           });
 

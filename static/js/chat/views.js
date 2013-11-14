@@ -37,9 +37,36 @@
 
       this.peer.on('change:presence', this._onPeerPresenceChanged, this);
 
+      // Media streams
       this.call.media.on('local-stream:ready remote-stream:ready', function() {
-        this.$el.addClass('has-video');
+        if (this.call.requiresVideo())
+          this.$el.addClass('has-video');
+        else
+          this.$el.removeClass('has-video');
       }, this);
+
+      // ICE connection state changes
+      this.call.media.on('ice:failed',
+        this._notify.bind(this, "Your call could not be connected."));
+      this.call.media.on('ice:disconnected',
+        this._notify.bind(this, "The call was disconnected."));
+      this.call.media.on('ice:new ice:checking ice:connected ice:completed',
+        this._clearNotification, this);
+    },
+
+    _clearNotification: function() {
+      if (!this.notification)
+        return;
+      this.notification.clear();
+      this.$('#notifications').empty();
+    },
+
+    _notify: function(message) {
+      this._clearNotification();
+      this.notification = new app.views.NotificationView({
+        model: new app.models.Notification({message: message})
+      });
+      this.$('#notifications').append(this.notification.render().$el.html());
     },
 
     _onPeerPresenceChanged: function(peer) {
@@ -243,7 +270,7 @@
       setTimeout(function() {
         this.call.ignore();
         window.close();
-      }.bind(this), 3000);
+      }.bind(this), app.options.CONVERSATION_IGNORE_DISPLAY_TIME);
     },
 
     /**
@@ -387,61 +414,59 @@
         throw new Error("missing parameter: el");
 
       this.call = options.call;
-      this.call.media.on('local-stream:ready', this._displayLocalVideo, this);
-      this.call.media.on('remote-stream:ready', this._displayRemoteVideo, this);
+      this.call.media.on('local-stream:ready', this._playLocalMedia, this);
+      this.call.media.on('remote-stream:ready', this._playRemoteMedia, this);
       this.call.media.on('local-stream:terminated',
-                         this._terminateLocalVideo, this);
+                         this._terminateLocalMedia, this);
       this.call.media.on('remote-stream:terminated',
-                         this._terminateRemoteVideo, this);
-      this.call.media.on('connection-upgraded', this.ongoing, this);
+                         this._terminateRemoteMedia, this);
 
       this.call.on('change:state', this.render, this);
-
-      this.render();
     },
 
-    _displayLocalVideo: function(stream) {
-      var $localVideo = this.$('#local-video'),
-          localVideo = $localVideo.get(0);
-      if (!localVideo)
+    _playLocalMedia: function(stream) {
+      var localMedia = this.$('#local-media').get(0);
+      if (!localMedia)
         return this;
-      localVideo.mozSrcObject = stream;
-      localVideo.onplaying = function() {
-        if (this.call.requiresVideo())
-          $localVideo.show();
-      }.bind(this);
-      localVideo.play();
+      localMedia.mozSrcObject = stream;
+      localMedia.play();
       return this;
     },
 
-    _displayRemoteVideo: function(stream) {
-      var remoteVideo = this.$('#remote-video').get(0);
-      remoteVideo.mozSrcObject = stream;
-      remoteVideo.play();
+    _playRemoteMedia: function(stream) {
+      var remoteMedia = this.$('#remote-media').get(0);
+      remoteMedia.mozSrcObject = stream;
+      remoteMedia.play();
       return this;
     },
 
-    _terminateLocalVideo: function() {
-      var localVideo = this.$('#local-video').get(0);
-      if (!localVideo || !localVideo.mozSrcObject)
+    _terminateLocalMedia: function() {
+      var localMedia = this.$('#local-media').get(0);
+      if (!localMedia || !localMedia.mozSrcObject)
         return this;
 
-      localVideo.mozSrcObject = undefined;
+      localMedia.mozSrcObject = undefined;
     },
 
-    _terminateRemoteVideo: function() {
-      var remoteVideo = this.$('#remote-video').get(0);
-      if (!remoteVideo || !remoteVideo.mozSrcObject)
+    _terminateRemoteMedia: function() {
+      var remoteMedia = this.$('#remote-media').get(0);
+      if (!remoteMedia || !remoteMedia.mozSrcObject)
         return this;
 
-      remoteVideo.mozSrcObject = undefined;
+      remoteMedia.mozSrcObject = undefined;
     },
 
     render: function() {
-      if (this.call.state.current === "ongoing")
-        this.$el.show();
+      // All the show/hide logic is done using the display CSS attribute on
+      // the child .media-display-area div.  This allows $el's display to be
+      // used purely to express layout (i.e. "table-row", as of this writing).
+      // This is all motivated because it's a way to avoid a race between
+      // initial markup layout and JavaScript manipulation of the DOM.
+
+      if (this.call.state.current === "ongoing" && this.call.requiresVideo())
+        this.$el.find(".media-display-area").show();
       else
-        this.$el.hide();
+        this.$el.find(".media-display-area").hide();
     }
   });
 

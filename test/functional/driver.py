@@ -2,19 +2,20 @@
 
 import os
 
-from selenium.common.exceptions import NoSuchElementException
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import NoSuchElementException, \
+    InvalidElementStateException, TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from browser_test import output_base64_screenshot
+from config import testConfig
 
 SELENIUM_COMMAND_EXECUTOR = os.getenv("SELENIUM_COMMAND_EXECUTOR",
                                       "http://127.0.0.1:4444/wd/hub")
 BASE_APP_URL = "http://localhost:3000"
-DEFAULT_WAIT_TIMEOUT = 5
+DEFAULT_WAIT_TIMEOUT = testConfig['DEFAULT_WAIT_TIMEOUT']
 
 
 class Driver(WebDriver):
@@ -46,6 +47,29 @@ class Driver(WebDriver):
     def clickElement(self, css_selector):
         """ Clicks the element matching the provided CSS selector."""
         self.waitForElement(css_selector, visible=True).click()
+
+    def getElementProperty(self, element, property_name):
+        """Returns the value of the named property as a unicode string"""
+        return self.execute_script(
+            "return arguments[0][arguments[1]].toString();", element,
+            property_name)
+
+    def find_uncached_element_by_css_selector(self, css_selector):
+        """ Finds an uncached (and therefore current) copy of the first
+        element matched by this selector.  Believed to avoid intermittent
+        failure problems when doing a WebDriverWait on an attribute or
+        property as described in the "avoid this!" section of
+        <https://blog.mozilla.org/webqa/2012/07/12/how-to-webdriverwait/>.
+
+            Args:
+            - css_selector: selector to match
+
+            Returns:
+            - an uncached version of the first element matching the given
+            selector
+        """
+        return self.execute_script(
+            "return document.querySelector(arguments[0]);", css_selector)
 
     def signin(self):
         """ Signs the user in."""
@@ -106,8 +130,10 @@ class Driver(WebDriver):
         input_text.send_keys(message)
         input_text.send_keys(Keys.RETURN)
 
+    # We use double the default timeout here as we've seen slow startup times
+    # on Travis but we don't want to extend the timeout for everything.
     def switchToFrame(self, locator, expected_url,
-                      timeout=(DEFAULT_WAIT_TIMEOUT*2)):
+                      timeout=DEFAULT_WAIT_TIMEOUT * 2):
         """ Wait for a frame to become available, then switch to it.
 
             Args:
@@ -149,7 +175,7 @@ class Driver(WebDriver):
                 # unnecessary.  yuck.  ideally, Marionette won't have this
                 # problem, and when we switch to it, we'll be able to ditch
                 # this nested wait.  we'll see).
-                wait2 = WebDriverWait(self, DEFAULT_WAIT_TIMEOUT / 5)
+                wait2 = WebDriverWait(self, DEFAULT_WAIT_TIMEOUT)
                 wait2.until(EC.frame_to_be_available_and_switch_to_it(locator))
                 return False
 
@@ -163,10 +189,10 @@ class Driver(WebDriver):
         print "done wait for url"
         return self
 
-    def switchToChatWindow(self):
+    def switchToChatWindow(self, timeout=DEFAULT_WAIT_TIMEOUT):
         """Switches to the Social API chat window."""
         return self.switchToFrame("//chatbox",
-                                  BASE_APP_URL + "/chat.html")
+                                  BASE_APP_URL + "/chat.html", timeout=timeout)
 
     def switchToSidebar(self):
         """Switches to the Social API sidebar."""
@@ -235,6 +261,54 @@ class Driver(WebDriver):
             get_element_checker(self, visible), message=message)
 
         return self.find_elements_by_css_selector(css_selector)
+
+    def waitForElementWithPropertyValue(self, css_selector,
+                                        property_name,
+                                        property_value,
+                                        timeout=DEFAULT_WAIT_TIMEOUT):
+        """ Waits for DOM element matching the provided CSS selector to be
+            available and to have the given attribute or property set to
+            the given value
+
+            Args:
+            - css_selector: CSS selector string
+            - property_name: HTML attribute or DOM Element JS property name
+            - property_value: Unicode string representing expected JS value
+
+            Kwargs:
+            - timeout: Operation timeout in seconds
+
+            Returns: a single WebElement
+        """
+
+        def get_element_checker():
+
+            def find_element_by_selector_and_prop_value(driver):
+
+                # uncached to give the test a chance to pass
+                el = self.find_uncached_element_by_css_selector(css_selector)
+
+                # excitingly, WebDriver uses the word "attribute" to mean
+                # "attribute or property"!
+                if self.getElementProperty(el, property_name) == \
+                        property_value:
+                    return True
+
+                return False
+
+            return find_element_by_selector_and_prop_value
+
+        message = u"Couldn't find elem matching %s with property '%s' set " \
+                  u"to '%s')" % (css_selector, property_name,
+                                 property_value)
+
+        try:
+            WebDriverWait(self, timeout, poll_frequency=.25).until(
+                get_element_checker(), message=message)
+        except TimeoutException:
+            raise InvalidElementStateException(message)
+
+        return self.find_uncached_element_by_css_selector(css_selector)
 
     def detectWindowClose(self, javascriptAction):
         """ Detects closing of a window when a javascript action is run.

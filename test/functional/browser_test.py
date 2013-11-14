@@ -6,7 +6,7 @@ import signal
 import subprocess
 import unittest
 import functools
-import pdb
+import ipdb
 import sys
 
 from selenium.common.exceptions import TimeoutException
@@ -32,7 +32,7 @@ def debug_on(*exceptions):
             try:
                 return f(*args, **kwargs)
             except exceptions:
-                pdb.post_mortem(sys.exc_info()[2])
+                ipdb.post_mortem(sys.exc_info()[2])
         return wrapper
     return decorator
 
@@ -61,6 +61,22 @@ class BrowserTest(unittest.TestCase):
             raise AssertionError(u'Chat message containing "%s" not found; %s'
                                  % (message, err))
 
+    @classmethod
+    def assertCallMediaPlaying(cls, driver):
+        # the spec defines playing to be not paused
+        cls.assertMediaElementNotPaused(driver, ".local-media")
+        cls.assertMediaElementNotPaused(driver, ".remote-media")
+
+    @staticmethod
+    def assertMediaElementNotPaused(driver, css_selector):
+        el = driver.waitForElementWithPropertyValue(
+            css_selector, property_name="paused", property_value=u'false',
+            timeout=20)
+
+        if driver.getElementProperty(el, "paused") == u'true':
+            raise AssertionError(u'media element matching %s paused' %
+                                 css_selector)
+
     def assertElementTextContains(self, driver, css_selector, text,
                                   visible=None):
         element_text = driver.waitForElement(css_selector,
@@ -83,6 +99,62 @@ class BrowserTest(unittest.TestCase):
         except TimeoutException:
             raise AssertionError(u"%s is not visible, it should be"
                                  % css_selector)
+
+    def assertElementVisibleAndInView(self, driver, css_selector):
+        """ Asserts that at least one pixel of the first selected element
+        would be visible to an actual human being.  The WebDriver APIs
+        that use the word visible don't actually guarantee that.  Raises
+        an AssertionError if no element is found or the first element found
+        couldn't be seen at all
+
+            Args:
+            - driver: the driver instance hosting this element
+            - css_selector: the first element matching this selector will be
+              checked.
+        """
+
+        # first, wait for an element matching this selector to be
+        # what the WebDriver APIs consider visible.
+        self.assertElementVisible(driver, css_selector)
+        found_element = driver.find_element_by_css_selector(css_selector)
+
+        # Now, use JS from <http://stackoverflow.com/questions/123999/> to
+        # verify that the element is in the current viewport and not
+        # completely  covered by other elements
+        js_checker = """
+            var el = arguments[0];
+
+            var eap,
+            rect     = el.getBoundingClientRect(),
+            docEl    = document.documentElement,
+            vWidth   = window.innerWidth || docEl.clientWidth,
+            vHeight  = window.innerHeight || docEl.clientHeight,
+            efp      = function (x, y) {return document.elementFromPoint(x,y)},
+            contains = "contains" in el ?
+                "contains" : "compareDocumentPosition",
+            has = contains == "contains" ? 1 : 0x10;
+
+            // Return false if it's not in the viewport
+            if (rect.right < 0 || rect.bottom < 0 || rect.left > vWidth ||
+                rect.top > vHeight)
+            return false;
+
+            // Return true if any of its four corners are visible
+            return (
+                (eap = efp(rect.left,  rect.top)) == el
+             || el[contains](eap) == has
+             || (eap = efp(rect.right, rect.top)) == el
+             || el[contains](eap) == has
+             || (eap = efp(rect.right, rect.bottom)) == el
+             || el[contains](eap) == has
+             || (eap = efp(rect.left,  rect.bottom)) == el
+             || el[contains](eap)
+             == has)
+            """
+
+        if not driver.execute_script(js_checker, found_element):
+            raise AssertionError(u"%s is completely out of view" %
+                                 css_selector)
 
     def assertElementNotVisible(self, driver, css_selector):
         if driver.waitForElement(css_selector).is_displayed():
@@ -108,8 +180,8 @@ class BrowserTest(unittest.TestCase):
 
     def assertOngoingCall(self, driver):
         self.assertElementVisible(driver, "#call")
-        self.assertElementVisible(driver, "#local-video")
-        self.assertElementVisible(driver, "#remote-video")
+        self.assertElementVisible(driver, "#local-media")
+        self.assertElementVisible(driver, "#remote-media")
 
     def assertPendingOutgoingCall(self, driver):
         self.assertElementVisible(driver, ".btn-abort")
@@ -138,18 +210,38 @@ class BrowserTest(unittest.TestCase):
             raise AssertionError(u'Title does not equal "%s"; got "%s"' % (
                 title, driver.title))
 
+    def assertChatWindowOpen(self, driver):
+        try:
+            driver.switchToChatWindow(timeout=1)
+        except TimeoutException:
+            raise AssertionError('The Chat Window is not open')
+
+    def assertChatWindowClosed(self, driver):
+        try:
+            driver.switchToChatWindow(timeout=1)
+            raise AssertionError('The Chat Window is not closed')
+        except TimeoutException:
+            pass
+
+
+# XXX: we should DRY-ify the server startup via python
+# scripts. For now we do that in:
+#   - test/frontend/test_frontend_all.py
+#   - test/functional/browser_test.py
+SERVER_COMMAND = ("node", "app.js")
+SERVER_ENV = os.environ.copy()
+SERVER_ENV.update({"PORT": "3000",
+                   "NO_LOCAL_CONFIG": "true",
+                   "NODE_ENV": "test",
+                   "SESSION_SECRET": "unguessable"})
+
 
 # SingleNodeBrowserTest is used for starting up a single
 # node instance that is used for all tests in a test class.
 class SingleNodeBrowserTest(BrowserTest):
     @classmethod
     def setUpClass(cls):
-        cmd = ("node", "app.js")
-        env = os.environ.copy()
-        env.update({"PORT": "3000",
-                    "NO_LOCAL_CONFIG": "true",
-                    "NODE_ENV": "test"})
-        cls.node_app = subprocess.Popen(cmd, env=env)
+        cls.node_app = subprocess.Popen(SERVER_COMMAND, env=SERVER_ENV)
 
     @classmethod
     def tearDownClass(cls):
@@ -162,12 +254,7 @@ class MultipleNodeBrowserTest(BrowserTest):
     node_app = None
 
     def setUp(self):
-        cmd = ("node", "app.js")
-        env = os.environ.copy()
-        env.update({"PORT": "3000",
-                    "NO_LOCAL_CONFIG": "true",
-                    "NODE_ENV": "test"})
-        self.node_app = subprocess.Popen(cmd, env=env)
+        self.node_app = subprocess.Popen(SERVER_COMMAND, env=SERVER_ENV)
         self.addCleanup(kill_app, self.node_app)
 
     def tearDown(self):

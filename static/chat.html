@@ -14,12 +14,16 @@
   <div id="call-controls">
     <ul class="controls">
       <li class="btn-video"><a href="#" title="Start a video call"></a></li>
-     <li class="btn-audio"><a href="#" title="Start an audio call"></a></li>
-     <li class="btn-hangup hide"><a href="#" title="Hang up"></a></li>
-     <li class="btn-microphone-mute hide"><a href="#" title="Mute microphone"></a></li>
-     <li class="btn-speaker-mute hide"><a href="#" title="Mute peer's audio"></a></li>
+      <li class="btn-audio"><a href="#" title="Start an audio call"></a></li>
+      <li class="btn-hangup hide"><a href="#" title="Hang up"></a></li>
+      <li class="btn-microphone-mute hide"><a href="#" title="Mute microphone"></a></li>
+      <li class="btn-speaker-mute hide"><a href="#" title="Mute peer's audio"></a></li>
     </ul>
   </div>
+
+  <!-- Notifications -->
+  <div id="notifications"></div>
+  <!-- /Notifications -->
 
   <!-- Call Offer -->
   <div id="offer" class="pending hide">
@@ -28,7 +32,7 @@
     </p>
     <p class="incoming-info">
       <span class="media-icon"></span>
-      <span class="incoming-text">Incoming conversation…</span>
+      <span class="incoming-text">Incoming call…</span>
     </p>
     <p class="actions">
       <a class="btn btn-success btn-accept">Accept</a>
@@ -54,11 +58,11 @@
   <!-- /Call Establish -->
 
   <!-- Call view -->
-  <div id="call" class="hide">
-    <div class="video-area">
-      <video id="remote-video" class="remote-video"></video>
-      <video id="local-video" class="local-video hide" muted></video>
-   </div>
+  <div id="call">
+    <div class="media-display-area hide">
+      <video id="remote-media" class="remote-media"></video>
+      <video id="local-media" class="local-media" muted></video>
+    </div>
   </div>
   <!-- /Call view -->
 
@@ -104,12 +108,14 @@
   <script src="vendor/tnetbin-0.2.1.js"></script>
   <script src="/config.js"></script>
   <script src="js/webrtc.js"></script>
+  <script src="js/payloads.js"></script>
   <script src="js/app.js"></script>
   <script src="js/chat/app.js"></script>
   <script src="js/port.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/models.js"></script>
   <script src="js/chat/models.js"></script>
+  <script src="js/views.js"></script>
   <script src="js/chat/views.js"></script>
   <script>
     jQuery(function($) {

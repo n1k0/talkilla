@@ -1,5 +1,5 @@
 /* global Server */
-/* global describe, beforeEach, afterEach, sinon, it, expect */
+/* global describe, beforeEach, afterEach, sinon, it, expect, payloads */
 
 describe("Server", function() {
   var sandbox, server;
@@ -14,36 +14,6 @@ describe("Server", function() {
     sandbox.restore();
   });
 
-  describe("#signin", function() {
-    it("should send a signin request to the server", function() {
-      var callback = function() {};
-      sandbox.stub(server.http, "post");
-
-      server.signin("fake assertion", callback);
-
-      sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWithExactly(server.http.post, "/signin",
-                                     {assertion: "fake assertion"},
-                                     callback);
-    });
-  });
-
-  describe("#signout", function() {
-
-    it("should send a signout request to the server", function() {
-      var callback = function() {};
-      sandbox.stub(server.http, "post");
-
-      server.signout("foo", callback);
-
-      sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWithExactly(server.http.post, "/signout",
-                                     {nick: "foo"},
-                                     callback);
-    });
-
-  });
-
   describe("#connect", function() {
 
     beforeEach(function() {
@@ -52,10 +22,12 @@ describe("Server", function() {
 
     it("should request a stream", function() {
       sandbox.stub(server.http, "post");
-      server.connect("foo");
+      server.connect();
 
       sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWith(server.http.post, "/stream", {nick: "foo"});
+      sinon.assert.calledWith(server.http.post, "/stream", {
+        firstRequest: true
+      });
     });
 
     it("should trigger a connected event", function(done) {
@@ -66,78 +38,42 @@ describe("Server", function() {
         done();
       });
 
-      server.connect("foo");
+      server.connect({nick: "foo"});
     });
 
-    it("should trigger an error event if the request failed", function(done) {
-      sandbox.stub(server.http, "post", function(method, nick, callback) {
-        callback("error", "fake response");
-      });
-      server.on("error", function() {
-        done();
+    it("should trigger a disconnected event if the request has been aborted",
+      function(done) {
+        sandbox.stub(server.http, "post", function(method, nick, callback) {
+          callback(0, "request aborted");
+        });
+        server.on("disconnected", function() {
+          done();
+        });
+
+        server.connect({nick: "foo"});
       });
 
-      server.connect("foo");
-    });
+    it("should trigger a unauthorized event if the request returns a 400",
+      function(done) {
+        sandbox.stub(server.http, "post", function(method, nick, callback) {
+          callback(400, "bad request");
+        });
+        server.on("unauthorized", function() {
+          done();
+        });
+
+        server.connect({nick: "foo"});
+      });
 
     it("should call #_longPolling", function(done) {
       sandbox.stub(server.http, "post", function(method, nick, callback) {
         callback(null, "[]");
         sinon.assert.calledOnce(server._longPolling);
-        sinon.assert.calledWithExactly(server._longPolling, "foo", []);
+        sinon.assert.calledWithExactly(server._longPolling, []);
         done();
       });
 
-      server.connect("foo");
-    });
-
-  });
-
-  describe("#autoconnect", function() {
-
-    beforeEach(function() {
-      sandbox.stub(server, "_longPolling");
-    });
-
-    it("should request a stream", function() {
-      sandbox.stub(server.http, "post");
-      server.autoconnect("foo");
-
-      sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWith(server.http.post, "/stream", {nick: "foo"});
-    });
-
-    it("should trigger a connected event", function(done) {
-      sandbox.stub(server.http, "post", function(method, nick, callback) {
-        callback(null, "[]");
-      });
-      server.on("connected", function() {
-        done();
-      });
-
-      server.autoconnect("foo");
-    });
-
-    it("should trigger an error event if the request failed", function(done) {
-      sandbox.stub(server.http, "post", function(method, nick, callback) {
-        callback("error", "fake response");
-      });
-      server.on("disconnected", function() {
-        done();
-      });
-
-      server.autoconnect("foo");
-    });
-
-    it("should call #_longPolling", function(done) {
-      sandbox.stub(server.http, "post", function(method, nick, callback) {
-        callback(null, "[]");
-        sinon.assert.calledOnce(server._longPolling);
-        sinon.assert.calledWithExactly(server._longPolling, "foo", []);
-        done();
-      });
-
-      server.autoconnect("foo");
+      server.connect({nick: "foo"});
     });
 
   });
@@ -146,30 +82,40 @@ describe("Server", function() {
 
     it("should request a stream", function() {
       sandbox.stub(server.http, "post");
-      server._longPolling("foo", []);
+      server._longPolling([]);
 
       sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWith(server.http.post, "/stream", {nick: "foo"});
+      sinon.assert.calledWith(server.http.post, "/stream");
     });
 
-    it("should trigger a disconnected event if the request failed",
+    it("should trigger a disconnected event if the request has been aborted",
       function(done) {
         sandbox.stub(server.http, "post", function(method, data, callback) {
-          callback("error", "some error");
+          callback(0, "request aborted");
         });
-        server.on("disconnected", function(error) {
-          expect(error).to.equal("some error");
+        server.on("disconnected", function() {
           done();
         });
-        server._longPolling("foo", []);
+        server._longPolling([]);
+      });
+
+    it("should trigger a unauthorized event if the request returns a 400",
+      function(done) {
+        sandbox.stub(server.http, "post", function(method, data, callback) {
+          callback(400, "bad request");
+        });
+        server.on("unauthorized", function() {
+          done();
+        });
+        server._longPolling([]);
       });
 
     it("should trigger a message event for each event", function(done) {
       var nbCall = 1;
       var events = [
-        {first:  "event 1"},
-        {second: "event 2"},
-        {third:  "event 3"}
+        {topic: "first",  data: "event 1"},
+        {topic: "second", data: "event 2"},
+        {topic: "third",  data: "event 3"}
       ];
       sandbox.stub(server.http, "post");
       server.on("message", function(type, event) {
@@ -192,19 +138,19 @@ describe("Server", function() {
         nbCall += 1;
       });
 
-      server._longPolling("foo", events);
+      server._longPolling(events);
     });
 
     it("should trigger a custom message event", function(done) {
-      var events = [{"sometype":  "event"}];
+      var events = [{topic: "sometopic", data: "event"}];
 
       sandbox.stub(server.http, "post");
-      server.on("message:sometype", function(event) {
+      server.on("message:sometopic", function(event) {
         expect(event).to.equal("event");
         done();
       });
 
-      server._longPolling("foo", events);
+      server._longPolling(events);
     });
 
     it("should call #_longPolling again", function(done) {
@@ -213,20 +159,16 @@ describe("Server", function() {
         sandbox.stub(server, "_longPolling");
         callback(null, "[]");
         sinon.assert.calledOnce(server._longPolling);
-        sinon.assert.calledWithExactly(server._longPolling, "foo", []);
+        sinon.assert.calledWithExactly(server._longPolling, []);
         done();
       });
 
-      server._longPolling("foo", []);
+      server._longPolling([]);
     });
 
   });
 
   describe("#callOffer", function() {
-
-    beforeEach(function() {
-      server.nick = "foo";
-    });
 
     it("should send an offer to a peer", function() {
       var offerData = "fake offer payload";
@@ -236,19 +178,12 @@ describe("Server", function() {
 
       sinon.assert.calledOnce(server.http.post);
       sinon.assert.calledWithExactly(
-        server.http.post, "/calloffer", {
-          data: offerData,
-          nick: "foo"
-        }, callback);
+        server.http.post, "/calloffer", {data: offerData}, callback);
     });
 
   });
 
   describe("#callAnswer", function() {
-
-    beforeEach(function() {
-      server.nick = "bar";
-    });
 
     it("should accept a call from peer", function() {
       var answerData = "fake answer payload";
@@ -258,19 +193,12 @@ describe("Server", function() {
 
       sinon.assert.calledOnce(server.http.post);
       sinon.assert.calledWithExactly(
-        server.http.post, "/callaccepted", {
-          data: answerData,
-          nick: "bar"
-        }, callback);
+        server.http.post, "/callaccepted", {data: answerData}, callback);
     });
 
   });
 
   describe("#callHangup", function() {
-
-    beforeEach(function() {
-      server.nick = "xoo";
-    });
 
     it("should hangup the call", function() {
       var hangupData = "fake hangup payload";
@@ -280,10 +208,26 @@ describe("Server", function() {
 
       sinon.assert.calledOnce(server.http.post);
       sinon.assert.calledWithExactly(
-        server.http.post, "/callhangup", {
-          data: hangupData,
-          nick: "xoo"
-        }, callback);
+        server.http.post, "/callhangup", {data: hangupData}, callback);
+    });
+
+  });
+
+  describe("#iceCandidate", function() {
+
+    it("should send an ice candidate", function() {
+      var iceCandidateMsg = new payloads.IceCandidate({
+        peer: "lloyd",
+        candidate: "dummy"
+      });
+      var callback = function() {};
+      sandbox.stub(server.http, "post");
+      server.nick = "lloyd";
+      server.iceCandidate(iceCandidateMsg, callback);
+
+      sinon.assert.calledOnce(server.http.post);
+      sinon.assert.calledWith(
+        server.http.post, "/icecandidate", {data: iceCandidateMsg}, callback);
     });
 
   });
@@ -296,80 +240,10 @@ describe("Server", function() {
       server.presenceRequest("foo");
 
       sinon.assert.calledOnce(server.http.post);
-      sinon.assert.calledWith(server.http.post, "/presencerequest", {
-        nick: "foo"
-      });
+      sinon.assert.calledWith(server.http.post, "/presencerequest");
     });
 
   });
 
-  describe.skip("websocket's events", function() {
-
-    it("should trigger a 'connected' event when it opens", function() {
-      var callback = sinon.spy();
-
-      server.on("connected", callback);
-      server.connect("foo");
-      server._ws.onopen();
-
-      sinon.assert.calledOnce(callback);
-    });
-
-    it("should trigger a message event when it receives one", function() {
-      var callback = sinon.spy();
-      var event = {data: JSON.stringify({thisis: {an: "event"}})};
-
-      server.on("message", callback);
-      server.connect("foo");
-      server._ws.onmessage(event);
-
-      sinon.assert.calledOnce(callback);
-      sinon.assert.calledWithExactly(callback, "thisis", {an: "event"});
-    });
-
-    it("should trigger a custom event when it receives a message", function() {
-      var callback = sinon.spy();
-      var event = {data: JSON.stringify({custom: {an: "event"}})};
-
-      server.on("message:custom", callback);
-      server.connect("foo");
-      server._ws.onmessage(event);
-
-      sinon.assert.calledOnce(callback);
-      sinon.assert.calledWithExactly(callback, {an: "event"});
-    });
-
-    it("should trigger an error event when having an error", function() {
-      var callback = sinon.spy();
-
-      server.on("error", callback);
-      server.connect("foo");
-      server._ws.onerror("an error");
-
-      sinon.assert.calledOnce(callback);
-      sinon.assert.calledWithExactly(callback, "an error");
-    });
-
-    it("should trigger a disconnected event when it closes", function() {
-      var callback = sinon.spy();
-
-      server.on("disconnected", callback);
-      server.connect("foo");
-      server._ws.onclose();
-
-      sinon.assert.calledOnce(callback);
-    });
-  });
-
-  describe.skip("#send", function() {
-    it("should send serialized data throught the websocket", function() {
-      server.connect("foo");
-      server.send({some: "data"});
-
-      sinon.assert.calledOnce(server._ws.send);
-      sinon.assert.calledWithExactly(server._ws.send,
-                                     JSON.stringify({some: "data"}));
-    });
-  });
 });
 

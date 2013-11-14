@@ -1,8 +1,6 @@
-/*global chai, sinon, ports:true, Port, PortCollection, handlers,
-  _currentUserData:true, currentConversation:true, UserData,
-  _presenceSocket:true, browserPort:true, tkWorker,
-  Conversation, _loginPending:true, _autologinPending:true,
-  _cookieNickname:true, SPA, spa:true, _signinCallback */
+/*global chai, sinon, Port, handlers, currentConversation:true, UserData,
+  _presenceSocket:true, browserPort:true, tkWorker, Conversation, SPA,
+  spa:true, payloads */
 /* jshint expr:true */
 
 var expect = chai.expect;
@@ -16,32 +14,30 @@ describe('handlers', function() {
     sandbox.stub(window, "Server");
     sandbox.stub(window, "Worker").returns({postMessage: sinon.spy()});
     spa = new SPA({src: "example.com"});
+    browserPort = {postEvent: sandbox.spy()};
   });
 
   afterEach(function() {
     sandbox.restore();
+    browserPort = undefined;
   });
 
   describe("social.port-closing", function() {
     var port;
 
     beforeEach(function() {
-      ports = new PortCollection();
       port = new Port({_portid: 42});
-      ports.add(port);
-
-      browserPort = {postEvent: sandbox.spy()};
+      tkWorker.ports.add(port);
     });
 
     afterEach(function() {
       currentConversation = undefined;
-      browserPort = undefined;
     });
 
     it("should remove a closed port on receiving social.port-closing",
       function() {
         handlers['social.port-closing'].bind(port)();
-        expect(Object.keys(ports.ports)).to.have.length.of(0);
+        expect(Object.keys(tkWorker.ports.ports)).to.have.length.of(0);
       });
 
     it("should clear the current conversation on receiving " +
@@ -54,282 +50,25 @@ describe('handlers', function() {
       });
   });
 
-  describe("social.cookies-get-response", function() {
-    beforeEach(function() {
-      _cookieNickname = undefined;
-    });
-
-    afterEach(function() {
-      _cookieNickname = undefined;
-    });
-
-    it("should try to connect the presence socket",
-      function() {
-        _currentUserData = {};
-        sandbox.stub(spa, "autoconnect");
-        var event = {
-          data: [ {name: "nick", value: "Boriss"} ]
-        };
-
-        handlers['social.cookies-get-response'](event);
-
-        sinon.assert.calledOnce(spa.autoconnect);
-        sinon.assert.calledWithExactly(spa.autoconnect, "Boriss");
-      });
-
-    it("should NOT try to connect if there is no nick provided",
-      function () {
-        sandbox.stub(spa, "autoconnect");
-
-        handlers['social.cookies-get-response']({
-          topic: "social.cookies-get-response",
-          data: []
-        });
-
-        sinon.assert.notCalled(spa.autoconnect);
-      });
-
-  });
-
   describe("talkilla.contacts", function() {
-    it("should update current users list with provided contacts", function() {
-      sandbox.stub(tkWorker, "updateContactList");
+    it("should update contacts list with provided contacts", function() {
+      sandbox.stub(tkWorker, "updateContactsFromSource");
       var contacts = [{username: "foo"}, {username: "bar"}];
 
       handlers['talkilla.contacts']({
         topic: "talkilla.contacts",
-        data: {contacts: contacts}
+        data: {contacts: contacts, source: "google"}
       });
 
-      sinon.assert.calledOnce(tkWorker.updateContactList);
-      sinon.assert.calledWithExactly(tkWorker.updateContactList, contacts);
+      sinon.assert.calledOnce(tkWorker.updateContactsFromSource);
+      sinon.assert.calledWithExactly(tkWorker.updateContactsFromSource,
+                                     contacts, "google");
     });
-  });
-
-  describe("talkilla.login", function() {
-    var xhr, rootURL, socketStub, requests;
-
-    beforeEach(function() {
-      socketStub = sinon.stub(spa, "connect");
-      // XXX For some reason, sandbox.useFakeXMLHttpRequest doesn't want to work
-      // nicely so we have to manually xhr.restore for now.
-      xhr = sinon.useFakeXMLHttpRequest();
-      requests = [];
-      xhr.onCreate = function (req) { requests.push(req); };
-
-      rootURL = 'http://fake';
-      _currentUserData = new UserData({}, {
-        ROOTURL: rootURL
-      });
-      sandbox.stub(_currentUserData, "send");
-      _loginPending = _autologinPending = false;
-    });
-
-    afterEach(function() {
-      _currentUserData = undefined;
-      xhr.restore();
-      socketStub.restore();
-    });
-
-    it("should call postEvent with a pending message if I pass in valid data",
-      function() {
-        handlers.postEvent = sandbox.spy();
-        handlers['talkilla.login']({
-          topic: "talkilla.login",
-          data: {assertion: "fake assertion"}
-        });
-        sinon.assert.calledOnce(handlers.postEvent);
-        sinon.assert.calledWith(handlers.postEvent, "talkilla.login-pending");
-      });
-
-    it("should post ask the spa to signin",
-      function() {
-        sandbox.stub(spa, "signin");
-        handlers['talkilla.login']({
-          topic: "talkilla.login",
-          data: {assertion: "fake assertion"}
-        });
-        sinon.assert.calledOnce(spa.signin);
-        sinon.assert.calledOnce(spa.signin, "fake assertion");
-      });
-
-    it("should not do anything if a login is already pending", function() {
-      _loginPending = true;
-      sandbox.stub(window, "_signinCallback");
-      handlers.postEvent = sandbox.spy();
-
-      handlers['talkilla.login']({
-        topic: "talkilla.login",
-        data: {assertion: "fake assertion"}
-      });
-
-      sinon.assert.notCalled(handlers.postEvent);
-      sinon.assert.notCalled(_signinCallback);
-    });
-
-    it("should not do anything if an auto login is already pending",
-      function() {
-        _autologinPending = true;
-        sandbox.stub(window, "_signinCallback");
-        handlers.postEvent = sandbox.spy();
-
-        handlers['talkilla.login']({
-          topic: "talkilla.login",
-          data: {assertion: "fake assertion"}
-        });
-
-        sinon.assert.notCalled(handlers.postEvent);
-        sinon.assert.notCalled(_signinCallback);
-      });
-
-    describe("Failed login", function() {
-      it("should call postEvent with a failure message if I pass in bad data",
-        function() {
-          handlers.postEvent = sandbox.spy();
-          handlers['talkilla.login']({topic: "talkilla.login", data: null});
-          sinon.assert.calledOnce(handlers.postEvent);
-          sinon.assert.calledWith(handlers.postEvent, "talkilla.login-failure");
-        });
-
-      it("should post a fail message if the server rejected login",
-        function() {
-          handlers.postEvent = sinon.spy();
-          sandbox.stub(spa, "signin", function(assertion, callback) {
-            handlers.postEvent.reset();
-
-            callback("error", "{}");
-            sinon.assert.calledOnce(handlers.postEvent);
-            sinon.assert.calledWith(
-              handlers.postEvent, "talkilla.login-failure");
-          });
-
-          handlers['talkilla.login']({
-            topic: "talkilla.login",
-            data: {assertion: "fake assertion"}
-          });
-        });
-    });
-
-    describe("Accepted Login", function() {
-      var port;
-
-      beforeEach(function() {
-        port = {id: "tests", postEvent: sandbox.spy()};
-        ports.add(port);
-        sandbox.stub(spa, "signin", function(nick, callback) {
-          callback(null, '{"nick":"jb"}');
-        });
-
-        handlers['talkilla.login']({
-          topic: "talkilla.login",
-          data: {assertion: "fake assertion"}
-        });
-      });
-
-      afterEach(function() {
-        ports.remove(port);
-      });
-
-      it("should store the userName if the server accepted login", function() {
-        expect(_currentUserData.userName).to.be.equal("jb");
-      });
-
-      it("should set the current user name if the server accepted login",
-        function() {
-          sinon.assert.calledOnce(_currentUserData.send);
-        });
-
-      it("should store the username if the server accepted login",
-        function() {
-          expect(_currentUserData.userName).to.equal('jb');
-        });
-    });
-  });
-
-  describe("talkilla.logout", function() {
-    var xhr, requests;
-
-    beforeEach(function() {
-      // XXX For some reason, sandbox.useFakeXMLHttpRequest doesn't want to work
-      // nicely so we have to manually xhr.restore for now.
-      xhr = sinon.useFakeXMLHttpRequest();
-      requests = [];
-      xhr.onCreate = function (req) { requests.push(req); };
-
-      sandbox.stub(UserData.prototype, "send");
-      _currentUserData = new UserData({userName: 'romain'}, {});
-      _presenceSocket = { close: sandbox.stub() };
-    });
-
-    afterEach(function() {
-      _presenceSocket = undefined;
-      _currentUserData = undefined;
-      xhr.restore();
-    });
-
-    it("should post an ajax message to the spa",
-      function() {
-        sandbox.stub(spa, "signout");
-        handlers['talkilla.logout']({
-          topic: 'talkilla.logout'
-        });
-        sinon.assert.calledOnce(spa.signout);
-      });
-
-    describe("Success logout", function() {
-      var port;
-
-      beforeEach(function () {
-        port = {id: "tests", postEvent: sandbox.spy()};
-        ports.add(port);
-        sandbox.stub(spa, "signout", function(nick, callback) {
-          callback(null, "OK");
-        });
-        sandbox.stub(_currentUserData, "reset");
-
-        handlers['talkilla.logout']({
-          topic: 'talkilla.logout'
-        });
-      });
-
-      afterEach(function() {
-        ports.remove(port);
-      });
-
-      it("should post a success message",
-        function() {
-          sinon.assert.calledOnce(port.postEvent);
-          sinon.assert.calledWith(port.postEvent, 'talkilla.logout-success');
-          ports.remove(port);
-        });
-
-      it("should reset the current user data", function() {
-        sinon.assert.calledOnce(_currentUserData.reset);
-      });
-    });
-
-    it("should log failure, if the server failed to sign the user out",
-      function() {
-        sandbox.stub(spa, "signout", function(nick, callback) {
-          callback("error", "Not Authorised");
-        });
-        handlers.postEvent = sandbox.spy();
-        handlers['talkilla.logout']({
-          topic: 'talkilla.logout'
-        });
-        sinon.assert.calledOnce(handlers.postEvent);
-        sinon.assert.calledWith(handlers.postEvent, 'talkilla.error');
-      });
   });
 
   describe("talkilla.conversation-open", function() {
-    beforeEach(function() {
-      browserPort = {postEvent: sandbox.spy()};
-    });
-
     afterEach(function() {
       currentConversation = undefined;
-      browserPort = undefined;
     });
 
     it("should create a new conversation object when receiving a " +
@@ -346,8 +85,7 @@ describe('handlers', function() {
 
   describe("talkilla.chat-window-ready", function() {
     beforeEach(function() {
-      browserPort = {postEvent: sandbox.spy()};
-      _currentUserData = new UserData();
+      tkWorker.user = new UserData();
       currentConversation = {
         windowOpened: sandbox.spy()
       };
@@ -355,15 +93,14 @@ describe('handlers', function() {
 
     afterEach(function() {
       currentConversation = undefined;
-      _currentUserData = undefined;
-      browserPort = undefined;
+      tkWorker.user.reset();
     });
 
     it("should tell the conversation the window has opened when " +
       "receiving a talkilla.chat-window-ready",
       function () {
         var chatAppPort = {postEvent: sinon.spy()};
-        _currentUserData.userName = "bob";
+        tkWorker.user.name = "bob";
 
         handlers['talkilla.chat-window-ready'].bind(chatAppPort)({
           topic: "talkilla.chat-window-ready",
@@ -379,39 +116,15 @@ describe('handlers', function() {
   describe("talkilla.sidebar-ready", function() {
 
     beforeEach(function() {
-      _currentUserData = new UserData();
-      sandbox.stub(_currentUserData, "send");
+      tkWorker.user = new UserData();
+      sandbox.stub(tkWorker.user, "send");
     });
 
     afterEach(function() {
-      _currentUserData = undefined;
+      tkWorker.user.reset();
     });
 
-    it("should notify new sidebars of the logged in user",
-      function() {
-        _currentUserData.userName = "jb";
-        handlers.postEvent = sinon.spy();
-        handlers['talkilla.sidebar-ready']({
-          topic: "talkilla.sidebar-ready",
-          data: {}
-        });
-
-        sinon.assert.called(handlers.postEvent);
-        sinon.assert.calledWith(handlers.postEvent, "talkilla.login-success");
-      });
-
-    it("should notify new sidebars only if there's a logged in user",
-      function() {
-        sandbox.stub(spa, "autoconnect");
-        handlers.postEvent = sinon.spy();
-        handlers['talkilla.sidebar-ready']({
-          topic: "talkilla.sidebar-ready",
-          data: {}
-        });
-
-        sinon.assert.notCalled(spa.autoconnect);
-      });
-    it("should notify new sidebars only if there's a logged in user",
+    it("should notify new sidebars the worker is ready",
       function() {
         handlers.postEvent = sinon.spy();
         handlers['talkilla.sidebar-ready']({
@@ -423,25 +136,53 @@ describe('handlers', function() {
         sinon.assert.calledWith(handlers.postEvent, "talkilla.worker-ready");
       });
 
+  });
+
+  describe("talkilla.spa-enable", function() {
+
+    var spa;
+
+    beforeEach(function() {
+      spa = {connect: sinon.spy(), on: function() {}};
+      sandbox.stub(window, "SPA").returns(spa);
+    });
+
+    it("should instantiate a new SPA with the given src", function() {
+      handlers["talkilla.spa-enable"]({
+        data: {src: "/path/to/spa", credentials: "fake credentials"}
+      });
+
+      sinon.assert.calledOnce(SPA);
+      sinon.assert.calledWithExactly(SPA, {src: "/path/to/spa"});
+    });
+
+    it("should connect the created SPA with given credentials", function() {
+      handlers["talkilla.spa-enable"]({
+        data: {src: "/path/to/spa", credentials: "fake credentials"}
+      });
+
+      sinon.assert.calledOnce(spa.connect);
+      sinon.assert.calledWithExactly(spa.connect, "fake credentials");
+    });
 
   });
 
   describe("talkilla.presence-request", function () {
     beforeEach(function() {
-      _currentUserData = new UserData();
-      sandbox.stub(_currentUserData, "send");
+      tkWorker.user = new UserData();
+      sandbox.stub(tkWorker.user, "send");
       sandbox.stub(spa, "presenceRequest");
     });
 
     afterEach(function() {
-      _currentUserData = null;
+      tkWorker.user.reset();
     });
 
     it("should notify new sidebars of current users",
       function() {
-        _currentUserData.userName = "jb";
+        tkWorker.user.name = "jb";
         _presenceSocket = {send: sinon.spy()};
-        tkWorker.currentUsers.reset();
+        tkWorker.users.reset();
         handlers.postEvent = sinon.spy();
         handlers['talkilla.presence-request']({
           topic: "talkilla.presence-request",
@@ -453,7 +194,7 @@ describe('handlers', function() {
 
     it("should request for the initial presence state " +
        "if there is no current users", function() {
-        tkWorker.currentUsers.reset();
+        tkWorker.users.reset();
         handlers['talkilla.presence-request']({
           topic: "talkilla.presence-request",
           data: {}
@@ -466,44 +207,43 @@ describe('handlers', function() {
 
   describe("talkilla.call-offer", function() {
 
-    it("should post an offer when receiving a talkilla.call-offer event",
+    it("should send an offer when receiving a talkilla.call-offer event",
       function() {
-        _currentUserData = {userName: "tom"};
+        tkWorker.user.name = "tom";
         sandbox.stub(spa, "callOffer");
-        var data = {
+        var offerMsg = new payloads.Offer({
           peer: "tom",
           offer: { sdp: "sdp", type: "type" }
-        };
+        });
 
         handlers['talkilla.call-offer']({
           topic: "talkilla.call-offer",
-          data: data
+          data: offerMsg
         });
 
         sinon.assert.calledOnce(spa.callOffer);
-        sinon.assert.calledWithExactly(
-          spa.callOffer, data.offer, data.peer, undefined);
+        sinon.assert.calledWithExactly(spa.callOffer, offerMsg);
       });
   });
 
   describe("talkilla.call-answer", function() {
     it("should send a websocket message when receiving talkilla.call-answer",
       function() {
-        _currentUserData = {userName: "fred"};
+        tkWorker.user.name = "fred";
         sandbox.stub(spa, "callAnswer");
-        var data = {
-          peer: "fred",
-          answer: { sdp: "sdp", type: "type" }
-        };
+        var answerMsg = new payloads.Answer({
+          answer: "fake answer",
+          peer: "fred"
+        });
 
         handlers['talkilla.call-answer']({
           topic: "talkilla.call-answer",
-          data: data
+          data: answerMsg
         });
 
         sinon.assert.calledOnce(spa.callAnswer);
         sinon.assert.calledWithExactly(
-          spa.callAnswer, data.answer, data.peer, undefined);
+          spa.callAnswer, answerMsg);
       });
   });
 
@@ -512,21 +252,41 @@ describe('handlers', function() {
       currentConversation = undefined;
     });
 
-    it("should send a websocket message when receiving talkilla.call-hangup",
+    it("should hangup the call when receiving talkilla.call-hangup",
       function() {
-        _currentUserData = {userName: "florian"};
+        var hangupMsg = new payloads.Hangup({peer: "florian"});
+        tkWorker.user.name = "florian";
         sandbox.stub(spa, "callHangup");
-        var data = {
-          peer: "florian"
-        };
 
         handlers['talkilla.call-hangup']({
           topic: "talkilla.call-hangup",
-          data: data
+          data: hangupMsg.toJSON()
         });
 
         sinon.assert.calledOnce(spa.callHangup);
-        sinon.assert.calledWithExactly(spa.callHangup, "florian");
+        sinon.assert.calledWithExactly(spa.callHangup, hangupMsg);
+      });
+  });
+
+  describe("talkilla.ice-candidate", function() {
+    afterEach(function() {
+    });
+
+    it("should pass the ice candidate to the spa",
+      function() {
+        sandbox.stub(spa, "iceCandidate");
+        var iceCandidateMsg = new payloads.IceCandidate({
+          peer: "lloyd",
+          candidate: "dummy"
+        });
+
+        handlers['talkilla.ice-candidate']({
+          topic: "talkilla.ice-candidate",
+          data: iceCandidateMsg
+        });
+
+        sinon.assert.calledOnce(spa.iceCandidate);
+        sinon.assert.calledWithExactly(spa.iceCandidate, iceCandidateMsg);
       });
   });
 

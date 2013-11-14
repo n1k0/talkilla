@@ -92,6 +92,32 @@ describe("GoogleContacts", function() {
     });
   });
 
+  describe("#initialize", function() {
+    it("should initialize the google api client", function() {
+      window.gapi = fakeGApi;
+      fakeGApi.auth.init = sandbox.spy();
+      new GoogleContacts().initialize();
+
+      sinon.assert.calledOnce(fakeGApi.auth.init);
+    });
+
+    it("should not throw if the api fails to initialise", function() {
+      window.gapi = {};
+
+      expect(new GoogleContacts().initialize).to.not.Throw();
+    });
+
+    it("should log an error if the api fails to initialise", function() {
+      sandbox.stub(console, "log");
+      window.gapi = {};
+
+      new GoogleContacts().initialize();
+
+      sinon.assert.calledOnce(console.log);
+      sinon.assert.calledWithMatch(console.log, "failed");
+    });
+  });
+
   describe("#authorize", function() {
     it("should pass an error if the google api client is unavailable",
       function(done) {
@@ -254,7 +280,7 @@ describe("GoogleContacts", function() {
       sinon.assert.calledOnce(fakePort.postEvent);
       sinon.assert.calledWithExactly(fakePort.postEvent,
                                      "talkilla.contacts",
-                                     {contacts: contacts});
+                                     {contacts: contacts, source: "google"});
     });
 
     it("should notify port with auth errors", function() {

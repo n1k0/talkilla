@@ -1,4 +1,4 @@
-/*global app, StateMachine, tnetbin */
+/*global app, StateMachine, tnetbin, WebRTC */
 /**
  * ChatApp models and collections.
  */
@@ -18,6 +18,7 @@
     },
     timer: undefined,
     media: undefined,
+    callid: undefined,
 
     /**
      * Call model constructor.
@@ -31,6 +32,7 @@
      */
     initialize: function(attributes, options) {
       this.set(attributes || {});
+      this.callid = app.utils.id();
 
       this.media = options && options.media;
       this.peer = options && options.peer;
@@ -80,6 +82,7 @@
      * - audio: set to true to enable audio
      */
     start: function(constraints) {
+      this.callid = app.utils.id();
       this.set('currentConstraints', constraints);
 
       if (this.media.state.current === 'ongoing')
@@ -100,10 +103,11 @@
       this.state.start();
 
       this.media.once("offer-ready", function(offer) {
-        this.trigger("send-offer", {
+        this.trigger("send-offer", new app.payloads.Offer({
           peer: this.peer.get("nick"),
-          offer: offer
-        });
+          offer: offer,
+          callid: this.callid
+        }));
       }, this);
 
       this.media.initiate(constraints);
@@ -111,17 +115,20 @@
 
     /**
      * Starts a call based on an incoming call request
-     * @param {Object} options object containing:
-     *
-     * - constraints: media constraints
-     * - offer:       information for the media object
-     * - upgrade:     is it a connection upgrade?
-     *
-     * Other items may be set according to the requirements for the particular
-     * media.
+     * @param {payloads.Offer} the received offer
      */
-    incoming: function(options) {
+    incoming: function(offerMsg) {
+      // The order of arguments is important to avoid modifying the
+      // offerMsg and upsetting unit tests
+      var options = _.extend({
+        offer: offerMsg.offer,
+        textChat: !!offerMsg.textChat,
+        upgrade: !!offerMsg.upgrade
+      }, WebRTC.parseOfferConstraints(offerMsg.offer));
+
       this.set('incomingData', options);
+      this.callid = offerMsg.callid;
+
       this.set('currentConstraints', {
         video: !!options.video,
         audio: !!options.audio
@@ -155,9 +162,10 @@
       this.state.timeout();
       this.media.terminate();
       this.media.reset();
-      this.trigger("send-timeout", {
-        peer: this.peer.get("nick")
-      });
+      this.trigger("send-timeout", new app.payloads.Hangup({
+        peer: this.peer.get("nick"),
+        callid: this.callid
+      }));
     },
 
     /**
@@ -167,10 +175,10 @@
       var data = this.get('incomingData');
 
       this.media.once("answer-ready", function(answer) {
-        this.trigger("send-answer", {
+        this.trigger("send-answer", new app.payloads.Answer({
           peer: this.peer.get("nick"),
           answer: answer
-        });
+        }));
 
         // XXX Change transition to complete/ongoing here as
         // this is the best place we've got currently to know that
@@ -210,9 +218,10 @@
       this.media.terminate();
 
       if (sendMsg) {
-        this.trigger("send-hangup", {
-          peer: this.peer.get("nick")
-        });
+        this.trigger("send-hangup", new app.payloads.Hangup({
+          peer: this.peer.get("nick"),
+          callid: this.callid
+        }));
       }
     },
 
@@ -228,12 +237,13 @@
       this.state.upgrade();
 
       this.media.once("offer-ready", function(offer) {
-        this.trigger("send-offer", {
+        this.trigger("send-offer", new app.payloads.Offer({
           peer: this.peer.get("nick"),
           offer: offer,
           textChat: false,
-          upgrade: true
-        });
+          upgrade: true,
+          callid: this.callid
+        }));
       }, this);
 
       this.media.upgrade(constraints);
@@ -455,11 +465,11 @@
 
     initiate: function(constraints) {
       this.media.once("offer-ready", function(offer) {
-        this.trigger("send-offer", {
+        this.trigger("send-offer", new app.payloads.Offer({
           peer: this.peer.get("nick"),
           offer: offer,
           textChat: true
-        });
+        }));
       }, this);
 
       this.media.initiate(constraints);
@@ -467,11 +477,11 @@
 
     answer: function(offer) {
       this.media.once("answer-ready", function(answer) {
-        this.trigger("send-answer", {
+        this.trigger("send-answer", new app.payloads.Answer({
           peer: this.peer.get("nick"),
           answer: answer,
           textChat: true
-        });
+        }));
       }, this);
 
       this.media.answer(offer);

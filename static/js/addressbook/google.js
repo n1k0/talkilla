@@ -8,8 +8,8 @@ var GoogleContacts = (function() {
   var AUTH_COOKIE_TTL = 365 * 10; // in days
   var MAX_RESULTS = 9999; // max number of contacts to fetch
   var config = {
-    // XXX: more official mozilla-owned google app id?
-    "client_id": "583962873515.apps.googleusercontent.com",
+    // This is a Talkilla specific client id.
+    "client_id": "122170353410.apps.googleusercontent.com",
     "scope":     "https://www.google.com/m8/feeds"
   };
   var baseUrl = config.scope + "/contacts/default/full?v=3.0&alt=json";
@@ -64,6 +64,22 @@ var GoogleContacts = (function() {
 
   GoogleContacts.prototype = {
     /**
+     * Initialises oauth for the popup window avoidance
+     */
+    initialize: function(cb) {
+      if (typeof gapi !== "object")
+        return cb && cb(new Error("gapi is missing"));
+
+      // Init the google auth api now, because this needs to be done
+      // before any button click for authorization.
+      try {
+        gapi.auth.init(cb);
+      } catch (x) {
+        console.log("Google Contacts API failed to initialize correctly");
+      }
+    },
+
+    /**
      * OAuth autorization for accessing user's contacts through the Google
      * Contacts API. Will open an OAuth popup window requiring the user to allow
      * the application to access his contacts data.
@@ -76,15 +92,14 @@ var GoogleContacts = (function() {
     authorize: function(cb) {
       if (typeof gapi !== "object")
         return cb.call(this, new Error("gapi is missing"));
-      gapi.auth.init(function() {
-        gapi.auth.authorize(config, function(auth) {
-          try {
-            this._storeToken(auth.access_token);
-            cb.call(this, null);
-          } catch (err) {
-            cb.call(this, err);
-          }
-        }.bind(this));
+
+      gapi.auth.authorize(config, function(auth) {
+        try {
+          this._storeToken(auth.access_token);
+          cb.call(this, null);
+        } catch (err) {
+          cb.call(this, err);
+        }
       }.bind(this));
     },
 
@@ -135,7 +150,10 @@ var GoogleContacts = (function() {
         this.all(function(err, contacts) {
           if (err)
             return this.port.postEvent("talkilla.contacts-error", err);
-          this.port.postEvent("talkilla.contacts", {contacts: contacts});
+          this.port.postEvent("talkilla.contacts", {
+            contacts: contacts,
+            source: "google"
+          });
         }.bind(this));
       }.bind(this));
     },

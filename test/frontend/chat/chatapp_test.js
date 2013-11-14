@@ -1,4 +1,4 @@
-/*global app, chai, ChatApp, sinon, WebRTC */
+/*global app, chai, ChatApp, sinon, WebRTC, payloads */
 
 /* jshint expr:true */
 var expect = chai.expect;
@@ -9,6 +9,7 @@ describe("ChatApp", function() {
   var sandbox, chatApp, AppPortStub;
   var callData = {peer: "bob", peerPresence: "connected"};
   var incomingCallData = {
+    callid: 2,
     peer: "alice",
     peerPresence: "connected",
     offer: {type: "answer", sdp: "fake"}
@@ -270,7 +271,7 @@ describe("ChatApp", function() {
 
         sinon.assert.calledOnce(chatApp.call.incoming);
         sinon.assert.calledWithMatch(chatApp.call.incoming,
-         {offer: incomingCallData.offer, video: false, audio: false});
+          new app.payloads.Offer(incomingCallData));
       });
 
       it("should play the incoming call sound", function() {
@@ -308,10 +309,18 @@ describe("ChatApp", function() {
     });
 
     describe("#_onCallShutdown", function() {
+      var hangupData;
+
       beforeEach(function() {
+        hangupData = new app.payloads.Hangup({
+          peer: "foo",
+          callid: 1
+        }).toJSON();
+        chatApp.call.callid = 1;
+
         sandbox.stub(chatApp.call, "hangup");
         sandbox.stub(window, "close");
-        chatApp._onCallShutdown();
+        chatApp._onCallShutdown(hangupData);
       });
 
       it("should hangup the call", function() {
@@ -329,14 +338,24 @@ describe("ChatApp", function() {
         sinon.assert.calledWithExactly(chatApp.audioLibrary.stop,
           "incoming");
       });
+
+      it("should not hangup the call if the call id is different", function() {
+        chatApp.call.hangup.reset();
+        chatApp.call.callid = 2;
+        chatApp._onCallShutdown(hangupData);
+
+        sinon.assert.notCalled(chatApp.call.hangup);
+      });
+
     });
 
     describe("#_onCallHangup", function() {
 
       it("should send a talkilla.call-hangup event", function() {
+        var fakeHangupMsg = {toJSON: function() {}};
         sandbox.stub(window, "close");
 
-        chatApp._onCallHangup();
+        chatApp._onCallHangup(fakeHangupMsg);
 
         sinon.assert.called(chatApp.port.postEvent);
         sinon.assert.calledWith(chatApp.port.postEvent,
@@ -346,18 +365,14 @@ describe("ChatApp", function() {
     });
 
     describe("#_onSendOffer", function() {
-      var offer;
-
-      beforeEach(function() {
-        offer = {
-          sdp: 'sdp',
-          type: 'type'
-        };
-      });
 
       it("should post an event to the worker when onSendOffer is called",
         function() {
-          chatApp._onSendOffer(offer);
+          var offerMsg = new payloads.Offer({
+            offer: "fake offer",
+            peer: "leila"
+          });
+          chatApp._onSendOffer(offerMsg);
 
           sinon.assert.called(chatApp.port.postEvent);
           sinon.assert.calledWith(chatApp.port.postEvent,
@@ -368,12 +383,12 @@ describe("ChatApp", function() {
     describe("#_onSendAnswer", function() {
       it("should post an event to the worker when onSendAnswer is triggered",
         function() {
-          var answer = {
-            sdp: 'sdp',
-            type: 'type'
-          };
+          var answerMsg = new payloads.Answer({
+            answer: "fake answer",
+            peer: "lisa"
+          });
 
-          chatApp._onSendAnswer(answer);
+          chatApp._onSendAnswer(answerMsg);
 
           sinon.assert.called(chatApp.port.postEvent);
           sinon.assert.calledWith(chatApp.port.postEvent,
@@ -383,11 +398,13 @@ describe("ChatApp", function() {
 
     describe("#_onSendTimeout", function() {
       it("should post a talkilla.call-hangup event to the worker", function() {
-        chatApp.call.trigger("send-timeout", {peer: "florian"});
+        var fakeHangupMsg = {toJSON: function() {}};
+
+        chatApp.call.trigger("send-timeout", fakeHangupMsg);
 
         sinon.assert.called(chatApp.port.postEvent);
         sinon.assert.calledWith(chatApp.port.postEvent,
-                                "talkilla.call-hangup", {peer: "florian"});
+                                "talkilla.call-hangup");
       });
     });
 
@@ -412,6 +429,39 @@ describe("ChatApp", function() {
     });
 
     describe("Events", function() {
+      describe("ice:candidate-ready", function() {
+        it("should post a talkilla:ice-candidate message to the worker",
+          function() {
+          var iceCandidateMsg = new payloads.IceCandidate({
+            peer: "lloyd",
+            candidate: "dummy"
+          });
+          chatApp.peer.set("nick", "lloyd");
+
+          chatApp.webrtc.trigger("ice:candidate-ready", "dummy");
+
+          sinon.assert.called(AppPortStub.postEvent);
+          sinon.assert.calledWith(AppPortStub.postEvent,
+                                  "talkilla.ice-candidate",
+                                  iceCandidateMsg.toJSON());
+        });
+      });
+
+      describe("talkilla.ice-candidate", function () {
+        it("should pass the candidate to the webrtc model", function() {
+          var candidate = "dummy";
+
+          sandbox.stub(chatApp.webrtc, "addIceCandidate");
+
+          chatApp.port.trigger("talkilla.ice-candidate", {
+            candidate: candidate
+          });
+
+          sinon.assert.calledOnce(chatApp.webrtc.addIceCandidate);
+          sinon.assert.calledWith(chatApp.webrtc.addIceCandidate, candidate);
+        });
+      });
+
       describe("unload", function() {
         it("should hangup the call", function() {
           sandbox.stub(chatApp.call, "hangup");

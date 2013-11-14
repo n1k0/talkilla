@@ -32,7 +32,7 @@ api = {
       }
     };
 
-    var req = https.request(options, function (res) {
+    var req = https.request(options, function(res) {
       var ret = "";
       res.setEncoding('utf8');
 
@@ -57,22 +57,29 @@ api = {
       if (err)
         return res.send(400, JSON.stringify({error: err}));
 
-      users.add(nick);
-      users.get(nick).ondisconnect = function() {
-        users.present().forEach(function(user) {
-          user.send({userLeft: nick});
-        });
-        logger.info({type: "disconnection"});
-      };
       logger.info({type: "signin"});
-      res.send(200, JSON.stringify(users.get(nick)));
+
+      req.session.email = nick;
+      res.send(200, JSON.stringify({nick: nick}));
     });
   },
 
   signout: function(req, res) {
-    var nick = req.body.nick;
-    users.get(nick).disconnect();
-    users.remove(nick);
+    if (!req.session.email)
+      return res.send(400);
+
+    var nick = req.session.email;
+
+    // Remove the user's session
+    req.session.reset();
+
+    var user = users.get(nick);
+    if (user) {
+      // Disconnecting the user will remove them from the users
+      // list.
+      user.disconnect();
+    }
+
     logger.info({type: "signout"});
     res.send(200, JSON.stringify(true));
   },
@@ -82,25 +89,29 @@ api = {
    *
    * This API provides a stream of event via a long polling mechanism.
    * The connection hangs for n seconds as long as there is no events.
-   * If in the meantime there is incoming events, then the API returns
-   * immediately with events as a response.
+   * If in the meantime there are incoming events, then the API returns
+   * immediately with these events as a response.
    *
    * Events received between reconnections are not lost.
    */
   stream: function(req, res) {
-    var nick = req.body.nick;
-    var user = users.get(nick);
-    // XXX: Here we verify if the user is signed in. Of course the
-    // nickname is not a sufficient proof of authentication nor
-    // authorization. We should fix that in the signin API by
-    // generating a secret token and verify it. Probably as a session
-    // property.
-    if (!user)
-      return res.send(400, JSON.stringify({}));
+    if (!req.session.email)
+      return res.send(400);
 
-    if (!user.present()) {
-      users.present().forEach(function(user) {
-        user.send({userJoined: nick});
+    var nick = req.session.email;
+    var user = users.get(nick);
+
+    if (!user) {
+      user = users.add(nick).get(nick);
+      users.get(nick).ondisconnect = function() {
+        users.remove(nick);
+        users.forEach(function(peer) {
+          peer.send("userLeft", nick);
+        });
+        logger.info({type: "disconnection"});
+      };
+      users.forEach(function(peer) {
+        peer.send("userJoined", nick);
       });
       user.touch();
       // XXX: Here we force the first long-polling request to return
@@ -108,6 +119,10 @@ api = {
       // request the presence. We should fix that on the frontend.
       res.send(200, JSON.stringify([]));
       logger.info({type: "connection"});
+    } else if (req.body && req.body.firstRequest) {
+      user.touch();
+      res.send(200, JSON.stringify([]));
+      logger.info({type: "reconnection"});
     } else {
       user.touch().waitForEvents(function(events) {
         res.send(200, JSON.stringify(events));
@@ -116,7 +131,10 @@ api = {
   },
 
   callOffer: function(req, res) {
-    var nick = req.body.nick;
+    if (!req.session.email)
+      return res.send(400);
+
+    var nick = req.session.email;
     var data = req.body.data;
     var peer = users.get(data.peer);
 
@@ -125,16 +143,20 @@ api = {
       // just as we call them. We may want to send something back to the
       // caller to indicate the issue.
       logger.warn("Could not forward offer to unknown peer");
-      return res.send(200, JSON.stringify({}));
+      return res.send(204);
     }
 
     data.peer = nick;
-    peer.send({'incoming_call': data});
-    logger.info({type: "call:offer", peer: data.peer});
+    peer.send("offer", data);
+    logger.info({type: "call:offer", peer: nick});
+    res.send(204);
   },
 
   callAccepted: function(req, res) {
-    var nick = req.body.nick;
+    if (!req.session.email)
+      return res.send(400);
+
+    var nick = req.session.email;
     var data = req.body.data;
     var peer = users.get(data.peer);
 
@@ -143,16 +165,20 @@ api = {
       // just as we call them. We may want to send something back to the
       // caller to indicate the issue.
       logger.warn("Could not forward offer to unknown peer");
-      return res.send(200, JSON.stringify({}));
+      return res.send(204);
     }
 
     data.peer = nick;
-    peer.send({'call_accepted': data});
+    peer.send("answer", data);
     logger.info({type: "call:accepted", peer: data.peer});
+    res.send(204);
   },
 
   callHangup: function(req, res) {
-    var nick = req.body.nick;
+    if (!req.session.email)
+      return res.send(400);
+
+    var nick = req.session.email;
     var data = req.body.data;
     var peer = users.get(data.peer);
 
@@ -161,19 +187,47 @@ api = {
       // just as we call them. We may want to send something back to the
       // caller to indicate the issue.
       logger.warn("Could not forward offer to unknown peer");
-      return res.send(200, JSON.stringify({}));
+      return res.send(204);
     }
 
     data.peer = nick;
-    peer.send({'call_hangup': data});
+    peer.send("hangup", data);
     logger.info({type: "call:hangup", peer: data.peer});
+    res.send(204);
+  },
+
+  iceCandidate: function(req, res) {
+    if (!req.session.email)
+      return res.send(400);
+
+    logger.info({type: "ice:candidate"});
+    var nick = req.session.email;
+    var data = req.body.data;
+    var peer = users.get(data.peer);
+
+    if (!peer) {
+      // XXX This could happen in the case of the user disconnecting
+      // just as we call them. We may want to send something back to the
+      // caller to indicate the issue.
+      logger.warn("Could not forward iceCandidate to unknown peer");
+      return res.send(204);
+    }
+
+    data.peer = nick;
+    peer.send('ice:candidate', data);
+    res.send(204);
   },
 
   presenceRequest: function(req, res) {
-    var user = users.get(req.body.nick);
-    var presentUsers = users.toJSON(users.present());
-    user.send({users: presentUsers});
-    return res.send(200, JSON.stringify({}));
+    if (!req.session.email)
+      return res.send(400);
+
+    var nick = req.session.email;
+    var user = users.get(nick);
+    var presentUsers = users.toJSON();
+
+    user.send("users", presentUsers);
+    return res.send(204);
   }
 };
 
@@ -183,6 +237,7 @@ app.post('/stream', api.stream);
 app.post('/calloffer', api.callOffer);
 app.post('/callaccepted', api.callAccepted);
 app.post('/callhangup', api.callHangup);
+app.post('/icecandidate', api.iceCandidate);
 app.post('/presenceRequest', api.presenceRequest);
 
 module.exports.api = api;

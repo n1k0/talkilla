@@ -62,7 +62,11 @@
 }
 
 .sidebar .users li a .username {
+  display: block;
+  overflow: hidden;
   padding-left: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar .status {
@@ -86,8 +90,6 @@
 
 .sidebar footer {
   width: 100%;
-  position: fixed;
-  bottom: 0;
   background: #F5F1E8;
   text-align: center;
   padding-top: 10px;

@@ -1,18 +1,14 @@
-/* global indexedDB, importScripts, SPA, HTTP, CollectedContacts, CurrentUsers,
-   loadConfig  */
+/* global indexedDB, importScripts, SPA, HTTP, ContactsDB, CurrentUsers,
+   loadConfig, payloads  */
 /* jshint unused:false */
 
 // XXX: Try to import Backbone only in files that need it (and check
 // if multiple imports cause problems).
 importScripts('../vendor/backbone-events-standalone-0.1.5.js');
-importScripts('/config.js', 'addressbook/collected.js');
+importScripts('/config.js', 'payloads.js', 'addressbook/contactsdb.js');
 importScripts('worker/http.js', 'worker/users.js', 'worker/spa.js');
 
 var gConfig = loadConfig();
-var _currentUserData;
-var _loginPending = false;
-var _autologinPending = false;
-var ports;
 var browserPort;
 var currentConversation;
 var spa;
@@ -40,6 +36,7 @@ var tkWorker;
 function Conversation(data) {
   this.data = data;
   this.port = undefined;
+  this.messageQueue = [];
 
   browserPort.postEvent('social.request-chat', 'chat.html');
 }
@@ -54,15 +51,41 @@ Conversation.prototype = {
   windowOpened: function(port) {
     this.port = port;
 
-    if (_currentUserData.userName) {
+    if (tkWorker.user.name) {
       // If there's currenty a logged in user,
       port.postEvent('talkilla.login-success', {
-        username: _currentUserData.userName
+        username: tkWorker.user.name
       });
-      this.data.user = _currentUserData.userName;
+      this.data.user = tkWorker.user.name;
     }
 
-    this._sendCall();
+    tkWorker.contactsDb.add({username: this.data.peer}, function(err) {
+      if (err)
+        tkWorker.ports.broadcastError(err);
+    });
+
+    // retrieve peer presence information
+    this.data.peerPresence = tkWorker.users.getPresence(this.data.peer);
+
+    if (this.data.offer) {
+      // We don't want to send a duplicate incoming message if one has
+      // already been queued.
+      var msgQueued = this.messageQueue.some(function(message) {
+        return message.topic === "talkilla.conversation-incoming";
+      });
+
+      if (!msgQueued)
+        this.port.postEvent("talkilla.conversation-incoming", this.data);
+    }
+    else
+      this.port.postEvent("talkilla.conversation-open", this.data);
+
+    // Now send any queued messages
+    this.messageQueue.forEach(function(message) {
+      this.port.postEvent(message.topic, message.data);
+    }, this);
+
+    this.messageQueue = [];
   },
 
   /**
@@ -72,37 +95,33 @@ Conversation.prototype = {
    * @param peer The id of the peer to compare with.
    */
   handleIncomingCall: function(data) {
-    ports.broadcastDebug('handle incoming call', data);
+    tkWorker.ports.broadcastDebug('handle incoming call', data);
 
     if (this.data.peer !== data.peer)
       return false;
 
-    if (_currentUserData)
-      data.user = _currentUserData.userName;
+    if (tkWorker.user)
+      data.user = tkWorker.user.name;
 
     this.data = data;
 
-    this._sendCall();
+    // retrieve peer presence information
+    this.data.peerPresence = tkWorker.users.getPresence(this.data.peer);
+
+    this._sendMessage("talkilla.conversation-incoming", this.data);
+
     return true;
   },
 
   /**
-   * Sends call information to the conversation window.
+   * Attempts to send a message to the port, if the port is not known
+   * it will queue the message for delivery on window opened.
    */
-  _sendCall: function() {
-    tkWorker.contactsDb.add({username: this.data.peer}, function(err) {
-      if (err)
-        ports.broadcastError(err);
-    });
-
-    // retrieve peer presence information
-    this.data.peerPresence = tkWorker.currentUsers.getPresence(this.data.peer);
-
-    var topic = this.data.offer ?
-      "talkilla.conversation-incoming" :
-      "talkilla.conversation-open";
-
-    this.port.postEvent(topic, this.data);
+  _sendMessage: function(topic, data) {
+    if (this.port)
+      this.port.postEvent(topic, data);
+    else
+      this.messageQueue.push({topic: topic, data: data});
   },
 
   /**
@@ -115,7 +134,7 @@ Conversation.prototype = {
    * - offer  the sdp offer for the connection
    */
   callAccepted: function(data) {
-    ports.broadcastDebug('conversation accepted', data);
+    tkWorker.ports.broadcastDebug('conversation accepted', data);
     this.port.postEvent('talkilla.call-establishment', data);
   },
 
@@ -128,8 +147,13 @@ Conversation.prototype = {
    * - peer   the id of the other user
    */
   callHangup: function(data) {
-    ports.broadcastDebug('conversation hangup', data);
+    tkWorker.ports.broadcastDebug('conversation hangup', data);
     this.port.postEvent('talkilla.call-hangup', data);
+  },
+
+  iceCandidate: function(data) {
+    tkWorker.ports.broadcastDebug('ice:candidate', data);
+    this._sendMessage('talkilla.ice-candidate', data);
   }
 };
 
@@ -147,14 +171,14 @@ Conversation.prototype = {
  *
  * UserData properties:
  *
- * userName: The name of the currently signed-in user.
+ * name:      The name of the currently signed-in user.
  * connected: Whether or not the websocket to the server is connected.
  */
 function UserData(initial, config) {
   this._rootURL = config ? config.ROOTURL : '';
 
   this.defaults = {
-    _userName: undefined,
+    _name: undefined,
     _connected: false
   };
 
@@ -170,12 +194,12 @@ function UserData(initial, config) {
 
 UserData.prototype = {
 
-  get userName() {
-    return this._userName;
+  get name() {
+    return this._name;
   },
 
-  set userName(userName) {
-    this._userName = userName;
+  set name(name) {
+    this._name = name;
     this.send();
   },
 
@@ -190,6 +214,7 @@ UserData.prototype = {
 
   /**
    * Resets current properties to default ones.
+   * @param {Boolean} skipSend Skip sending reset notification?
    */
   reset: function(skipSend) {
     for (var key in this.defaults)
@@ -219,8 +244,8 @@ UserData.prototype = {
       iconURL: this._rootURL + "/img/" + this.statusIcon,
       // XXX for now, we just hard-code the default avatar image.
       portrait: this._rootURL + "/img/default-avatar.png",
-      userName: this._userName,
-      displayName: this._userName,
+      userName: this._name,
+      displayName: this._name,
       profileURL: this._rootURL + "/user.html"
     };
 
@@ -229,60 +254,54 @@ UserData.prototype = {
 };
 
 function _setupSPA(spa) {
-  spa.on("connected", function() {
-    _autologinPending = false;
-    _currentUserData.connected = true;
-    // XXX: we should differentiate login and presence
-    ports.broadcastEvent('talkilla.login-success', {
-      username: _currentUserData.userName
-    });
+  spa.on("connected", function(data) {
+    tkWorker.user.name = data.addresses[0].value;
+    tkWorker.user.connected = true;
 
     // XXX Now we're connected, load the contacts database.
     // Really we should do this after successful sign-in or re-connect
     // but we don't have enough info for the worker for that yet
     tkWorker.loadContacts();
+
+    tkWorker.ports.broadcastEvent("talkilla.spa-connected");
   });
 
   spa.on("message", function(label, data) {
-    ports.broadcastDebug("spa event: " + label, data);
+    tkWorker.ports.broadcastDebug("spa event: " + label, data);
   });
 
   spa.on("message:users", function(data) {
     data.forEach(function(user) {
-      tkWorker.currentUsers.set(user.nick, {presence: "connected"});
+      tkWorker.users.set(user.nick, {presence: "connected"});
     });
 
-    ports.broadcastEvent("talkilla.users", tkWorker.currentUsers.toArray());
+    tkWorker.ports.broadcastEvent("talkilla.users", tkWorker.users.toArray());
   });
 
   spa.on("message:userJoined", function(userId) {
-    tkWorker.currentUsers.set(userId, {presence: "connected"});
+    tkWorker.users.set(userId, {presence: "connected"});
 
-    ports.broadcastEvent("talkilla.users", tkWorker.currentUsers.toArray());
-    ports.broadcastEvent("talkilla.user-joined", userId);
+    tkWorker.ports.broadcastEvent("talkilla.users", tkWorker.users.toArray());
+    tkWorker.ports.broadcastEvent("talkilla.user-joined", userId);
   });
 
   spa.on("message:userLeft", function(userId) {
-    if (!tkWorker.currentUsers.has(userId))
+    if (!tkWorker.users.has(userId))
       return;
 
-    tkWorker.currentUsers.set(userId, {presence: "disconnected"});
+    tkWorker.users.set(userId, {presence: "disconnected"});
 
-    ports.broadcastEvent("talkilla.users", tkWorker.currentUsers.toArray());
-    ports.broadcastEvent("talkilla.user-left", userId);
+    tkWorker.ports.broadcastEvent("talkilla.users", tkWorker.users.toArray());
+    tkWorker.ports.broadcastEvent("talkilla.user-left", userId);
   });
 
-  spa.on("offer", function(offer, from, textChat) {
-    var data = {offer: offer, peer: from};
-    if (textChat)
-      data.textChat = textChat;
-
+  spa.on("offer", function(offerMsg) {
     // If we're in a conversation, and it is not with the peer,
     // then ignore it
     if (currentConversation) {
       // If the currentConversation window can handle the incoming call
       // data (e.g. peer matches) then just handle it.
-      if (currentConversation.handleIncomingCall(data))
+      if (currentConversation.handleIncomingCall(offerMsg.toJSON()))
         return;
 
       // XXX currently, we can't handle more than one conversation
@@ -290,69 +309,43 @@ function _setupSPA(spa) {
       return;
     }
 
-    currentConversation = new Conversation(data);
+    currentConversation = new Conversation(offerMsg.toJSON());
   });
 
-  spa.on("answer", function(answer, from, textChat) {
-    var data = {answer: answer, peer: from};
-    if (textChat)
-      data.textChat = textChat;
-    currentConversation.callAccepted(data);
+  spa.on("answer", function(answerMsg) {
+    currentConversation.callAccepted(answerMsg.toJSON());
   });
 
-  spa.on("hangup", function(from) {
-    var data = {peer: from};
+  spa.on("hangup", function(hangupMsg) {
     if (currentConversation)
-      currentConversation.callHangup(data);
+      currentConversation.callHangup(hangupMsg.toJSON());
+  });
+
+  spa.on("ice:candidate", function(iceCandidateMsg) {
+    if (currentConversation)
+      currentConversation.iceCandidate(iceCandidateMsg.toJSON());
   });
 
   spa.on("error", function(event) {
-    ports.broadcastEvent("talkilla.websocket-error", event);
+    tkWorker.ports.broadcastEvent("talkilla.websocket-error", event);
   });
 
   spa.on("disconnected", function(event) {
-    _autologinPending = false;
-    _currentUserData.userName = undefined;
-    _currentUserData.connected = false;
-
     // XXX: this will need future work to handle retrying presence connections
-    ports.broadcastEvent('talkilla.presence-unavailable', event.code);
-    ports.broadcastEvent("talkilla.logout-success", {});
-    tkWorker.currentUsers.reset();
-    // XXX: really these should be reset on signout, not disconnect.
-    // Unload the database
-    tkWorker.contactsDb.close();
+    tkWorker.ports.broadcastEvent('talkilla.presence-unavailable', event.code);
+
+    tkWorker.closeSession();
   });
-}
 
-function _signinCallback(err, responseText) {
-  _loginPending = false;
-  var data = JSON.parse(responseText);
-  if (err)
-    return this.postEvent('talkilla.login-failure', data.error);
-  var username = data.nick;
-  if (username) {
-    _currentUserData.userName = username;
-
-    spa.connect(username);
-    ports.broadcastEvent("talkilla.presence-pending", {});
-  }
-}
-
-function _signoutCallback(err, responseText) {
-  _loginPending = false;
-  if (err)
-    return this.postEvent('talkilla.error', 'Bad signout:' + err);
-
-  _currentUserData.reset();
-  tkWorker.currentUsers.reset();
-  ports.broadcastEvent('talkilla.logout-success');
+  spa.on("reauth-needed", function(event) {
+    tkWorker.ports.broadcastEvent('talkilla.reauth-needed');
+  });
 }
 
 var handlers = {
   // SocialAPI events
   'social.port-closing': function() {
-    ports.remove(this);
+    tkWorker.ports.remove(this);
     if (browserPort === this)
       browserPort = undefined;
     if (currentConversation && currentConversation.port === this)
@@ -363,58 +356,21 @@ var handlers = {
     // Save the browserPort
     browserPort = this;
 
-    // Now we're connected request any cookies that we've got saved.
-    browserPort.postEvent('social.cookies-get');
-
     // Don't have it in the main list of ports, as we don't need
     // to broadcast all our talkilla.* messages to the social api.
-    ports.remove(this);
-  },
-
-  'social.cookies-get-response': function(event) {
-    var cookies = event.data;
-    cookies.forEach(function(cookie) {
-      if (cookie.name === "nick") {
-        _autologinPending = true;
-        _currentUserData.userName = cookie.value;
-        // If we've received the configuration info, then go
-        // ahead and log in.
-        spa.autoconnect(cookie.value);
-      }
-    });
+    tkWorker.ports.remove(this);
   },
 
   // Talkilla events
   'talkilla.contacts': function(event) {
-    ports.broadcastDebug('talkilla.contacts', event.data.contacts);
-    tkWorker.updateContactList(event.data.contacts);
-  },
-
-  'talkilla.login': function(msg) {
-    if (!msg.data || !msg.data.assertion) {
-      return this.postEvent('talkilla.login-failure', 'no assertion given');
-    }
-    if (_loginPending || _autologinPending)
-      return;
-
-    _loginPending = true;
-    this.postEvent('talkilla.login-pending', null);
-
-    spa.signin(msg.data.assertion, _signinCallback.bind(this));
-  },
-
-  'talkilla.logout': function() {
-    if (!_currentUserData.userName)
-      return;
-
-    spa.signout(_currentUserData.userName, _signoutCallback.bind(this));
+    tkWorker.ports.broadcastDebug('talkilla.contacts', event.data.contacts);
+    tkWorker.updateContactsFromSource(event.data.contacts, event.data.source);
   },
 
   'talkilla.conversation-open': function(event) {
     // XXX Temporarily work around to only allow one call at a time.
-    if (!currentConversation) {
+    if (!currentConversation)
       currentConversation = new Conversation(event.data);
-    }
   },
 
   'talkilla.chat-window-ready': function() {
@@ -429,53 +385,73 @@ var handlers = {
    */
   'talkilla.sidebar-ready': function(event) {
     this.postEvent('talkilla.worker-ready');
-    if (_currentUserData.userName) {
-      // If there's currently a logged in user,
-      this.postEvent('talkilla.login-success', {
-        username: _currentUserData.userName
-      });
-    }
   },
 
   /**
    * Called when the sidebar request the initial presence state.
    */
   'talkilla.presence-request': function(event) {
-    var users = tkWorker.currentUsers.toArray();
-    spa.presenceRequest(_currentUserData.userName);
+    var users = tkWorker.users.toArray();
+    spa.presenceRequest();
     this.postEvent('talkilla.users', users);
   },
 
   /**
-   * The data for talkilla.call-offer is:
+   * Called when the chat window initiates a call.
    *
-   * - peer:     the person you are calling
-   * - textChat: is this a text chat offer?
-   * - offer:    an RTCSessionDescription containing the sdp data for the call.
+   * @param {Object} event.data a data structure representation of a
+   * payloads.Offer.
    */
   'talkilla.call-offer': function(event) {
-    spa.callOffer(event.data.offer, event.data.peer, event.data.textChat);
+    var offerMsg = new payloads.Offer(event.data);
+    spa.callOffer(offerMsg);
   },
 
   /**
-   * The data for talkilla.call-answer is:
+   * Called when the chat window accepts a call.
    *
-   * - peer:     the person who is calling you
-   * - textChat: is this a text chat offer?
-   * - answer:   an RTCSessionDescription containing the sdp data for the call.
+   * @param {Object} event.data a data structure representation of a
+   * payloads.Answer.
    */
   'talkilla.call-answer': function(event) {
-    spa.callAnswer(event.data.answer, event.data.peer, event.data.textChat);
+    var answerMsg = new payloads.Answer(event.data);
+    spa.callAnswer(answerMsg);
   },
 
   /**
-   * Ends a call. The expected data is:
+   * Called when hanging up a call.
    *
-   * - peer: the person you are talking to.
+   * @param {Object} event.data a data structure representation of a
+   * payloads.Hangup.
    */
   'talkilla.call-hangup': function (event) {
-    spa.callHangup(event.data.peer);
+    spa.callHangup(new payloads.Hangup(event.data));
+  },
+
+  /**
+   * Called when hanging up a call.
+   *
+   * @param {Object} event.data a data structure representation of a
+   * payloads.IceCandidate.
+   */
+  'talkilla.ice-candidate': function(event) {
+    spa.iceCandidate(new payloads.IceCandidate(event.data));
+  },
+
+  /**
+   * Called to enable a new SPA.
+   *
+   * @param {Object} event.data a data structure representation of a
+   * payloads.SPASpec.
+   */
+  'talkilla.spa-enable': function(event) {
+    var spec = new payloads.SPASpec(event.data);
+    // XXX: For now, we only support one SPA.
+    spa = new SPA({src: spec.src});
+    _setupSPA(spa);
+    spa.connect(spec.credentials);
   }
+
 };
 
 function Port(port) {
@@ -591,19 +567,31 @@ PortCollection.prototype = {
  * @param {Object} options Options object
  *
  * Available options:
- * - {CollectedContacts} contactsDb   The collected contacts database
- * - {CurrentUsers}      currentUsers The object containing current users
- * - {PortCollection}    ports        The port collection object
+ * - {ContactsDB} contactsDb        The contacts database
+ * - {UserData}          user       The current user object
+ * - {CurrentUsers}      users      The object containing current users
+ * - {PortCollection}    ports      The port collection object
  */
 function TkWorker(options) {
   // XXX Move all globals into this constructor and create them here.
   options = options || {};
   this.contactsDb = options.contactsDb;
-  this.currentUsers = options.currentUsers || new CurrentUsers();
+  this.user = options.user;
+  this.users = options.users || new CurrentUsers();
   this.ports = options.ports;
 }
 
 TkWorker.prototype = {
+  /**
+   * Closes current user session.
+   */
+  closeSession: function() {
+    this.user.reset();
+    this.users.reset();
+    this.contactsDb.close();
+    this.ports.broadcastEvent('talkilla.logout-success', {});
+  },
+
   /**
    * Loads the contacts database and adds the contacts to the
    * current users list.
@@ -626,35 +614,36 @@ TkWorker.prototype = {
     }.bind(this));
   },
 
+  updateContactsFromSource: function(contacts, source) {
+    this.contactsDb.replaceSourceContacts(contacts, source);
+    // XXX We should potentially source this from contactsDb, but it
+    // is unclear at the moment if it is worth doing that or not.
+    this.updateContactList(contacts);
+  },
+
   /**
    * Updates the current users list with provided contacts.
    *
    * @param  {Array} contacts Contacts; format: [{username: "address"}]
    */
   updateContactList: function(contacts) {
-    this.currentUsers.updateContacts(contacts);
-    this.ports.broadcastEvent("talkilla.users", this.currentUsers.toArray());
+    this.users.updateContacts(contacts);
+    this.ports.broadcastEvent("talkilla.users", this.users.toArray());
   }
 };
 
 // Main Initialisations
 
-ports = new PortCollection();
+tkWorker = new TkWorker({
+  ports: new PortCollection(),
+  user: new UserData({}, gConfig),
+  users: new CurrentUsers(),
+  contactsDb: new ContactsDB({
+    dbname: "TalkillaContacts",
+    storename: "contacts"
+  })
+});
 
 function onconnect(event) {
-  ports.add(new Port(event.ports[0]));
+  tkWorker.ports.add(new Port(event.ports[0]));
 }
-
-_currentUserData = new UserData({}, gConfig);
-spa = new SPA({src: "/js/spa/talkilla_worker.js"});
-_setupSPA(spa);
-
-tkWorker = new TkWorker({
-  ports: ports,
-  contactsDb: new CollectedContacts({
-    dbname: "TalkillaContacts",
-    storename: "contacts",
-    version: 1
-  }),
-  currentUsers: new CurrentUsers()
-});

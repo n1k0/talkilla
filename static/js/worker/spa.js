@@ -1,4 +1,4 @@
-/* global importScripts, BackboneEvents */
+/* global importScripts, BackboneEvents, HTTP, payloads */
 /* jshint unused:false */
 
 var SPA = (function() {
@@ -8,6 +8,7 @@ var SPA = (function() {
 
     this.worker = new Worker(options.src);
     this.worker.onmessage = this._onMessage.bind(this);
+    this.http = new HTTP();
   }
 
   SPA.prototype = {
@@ -16,62 +17,87 @@ var SPA = (function() {
       var topic = event.data.topic;
       var data = event.data.data;
 
+      var mapping = {
+        "offer": payloads.Offer,
+        "answer": payloads.Answer,
+        "hangup": payloads.Hangup,
+        "ice:candidate": payloads.IceCandidate
+      };
+
       if (topic === "message") {
         type = data.shift();
         data = data.shift();
         this.trigger("message", type, data);
         this.trigger("message:" + type, data);
-      } else if (topic === "offer") {
-        this.trigger(topic, data.offer, data.peer, data.textChat);
-      } else if (topic === "answer") {
-        this.trigger(topic, data.answer, data.peer, data.textChat);
-      } else if (topic === "hangup") {
-        this.trigger(topic, data.peer);
+      } else if (topic in mapping) {
+        var Constructor = mapping[topic];
+        this.trigger(topic, new Constructor(data));
       } else {
         this.trigger(topic, data);
       }
     },
 
     _send: function(topic, data) {
+      // TODO: check the type of data and if it's a payload (like
+      // payloads.Offer) call toJSON on it. The SPA interface should
+      // not send custom objects.
       this.worker.postMessage({topic: topic, data: data});
     },
 
     signin: function(assertion, callback) {
-      this.once("signin-callback", function(data) {
-        callback(data.err, data.response);
-      });
-      this._send("signin", {assertion: assertion});
+      this.http.post("/signin", {assertion: assertion}, callback);
     },
 
-    signout: function(nick, callback) {
-      this.once("signout-callback", function(data) {
-        callback(data.err, data.response);
-      });
-      this._send("signout", {nick: nick});
+    signout: function(callback) {
+      this.http.post("/signout", {}, callback);
     },
 
-    connect: function(nick) {
-      this._send("connect", {nick: nick});
+    connect: function(credentials) {
+      this._send("connect", credentials);
     },
 
-    autoconnect: function(nick) {
-      this._send("autoconnect", {nick: nick});
+    /**
+     * Initiate a call via an SDP offer.
+     *
+     * @param {payloads.Offer} offerMsg an Offer payload to initiate a
+     * call.
+     */
+    callOffer: function(offerMsg) {
+      this._send("offer", offerMsg.toJSON());
     },
 
-    callOffer: function(offer, to, textChat) {
-      this._send("offer", {offer: offer, to: to, textChat: textChat});
+    /**
+     * Accept a call via an SDP answer.
+     *
+     * @param {payloads.Answer} answerMsg an Answer payload to accept
+     * a call.
+     */
+    callAnswer: function(answerMsg) {
+      this._send("answer", answerMsg.toJSON());
     },
 
-    callAnswer: function(answer, to, textChat) {
-      this._send("answer", {answer: answer, to: to, textChat: textChat});
+    /**
+     * End a call.
+     *
+     * @param {payloads.Hangup} hangupMsg a Hangup payload to end a
+     * call.
+     */
+    callHangup: function(hangupMsg) {
+      this._send("hangup", hangupMsg.toJSON());
     },
 
-    callHangup: function(to) {
-      this._send("hangup", {to: to});
+    /**
+     * Update the available ICE candidates for a call.
+     *
+     * @param {payloads.IceCandidate} iceCandidateMsg a IceCandidate
+     * payload to update the available ICE candidates.
+     */
+    iceCandidate: function(iceCandidateMsg) {
+      this._send("ice:candidate", iceCandidateMsg.toJSON());
     },
 
-    presenceRequest: function(nick) {
-      this._send("presence:request", {nick: nick});
+    presenceRequest: function() {
+      this._send("presence:request");
     }
   };
 

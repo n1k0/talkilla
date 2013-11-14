@@ -1,4 +1,4 @@
-/* global sinon, SPA, expect */
+/* global sinon, SPA, expect, payloads */
 /* jshint unused:false */
 
 describe("SPA", function() {
@@ -9,6 +9,7 @@ describe("SPA", function() {
     sandbox = sinon.sandbox.create();
     sandbox.stub(window, "Worker").returns(worker);
     spa = new SPA({src: "example.com"});
+    sandbox.stub(spa.http, "post");
   });
 
   afterEach(function() {
@@ -40,6 +41,25 @@ describe("SPA", function() {
       worker.onmessage({data: {topic: "foo", data: "bar"}});
     });
 
+    it("should trigger an ice:candidate event when receiving ice:candidate",
+      function(done) {
+        spa.on("ice:candidate", function(iceCandidateMsg) {
+          expect(iceCandidateMsg.peer).to.equal("lloyd");
+          expect(iceCandidateMsg.candidate).to.equal("dummy");
+          done();
+        });
+
+        worker.onmessage({
+          data: {
+            topic: "ice:candidate",
+            data: {
+              peer: "lloyd",
+              candidate: "dummy"
+            }
+          }
+        });
+      });
+
   });
 
   describe("#signin", function() {
@@ -48,23 +68,10 @@ describe("SPA", function() {
       var callback = function() {};
       spa.signin("fake assertion", callback);
 
-      sinon.assert.calledOnce(spa.worker.postMessage);
-      sinon.assert.calledWithExactly(spa.worker.postMessage, {
-        topic: "signin",
-        data: {assertion: "fake assertion"}
-      });
-    });
-
-    it("should wait for a signin-callback event", function(done) {
-      var callback = function(err, response) {
-        expect(err).to.equal("foo");
-        expect(response).to.equal("bar");
-        done();
-      };
-      var data = {err: "foo", response: "bar"};
-
-      spa.signin("fake assertion", callback);
-      spa.worker.onmessage({data: {topic: "signin-callback", data: data}});
+      sinon.assert.calledOnce(spa.http.post);
+      sinon.assert.calledWithExactly(spa.http.post, "/signin", {
+        assertion: "fake assertion"
+      }, callback);
     });
 
   });
@@ -73,25 +80,10 @@ describe("SPA", function() {
 
     it("should send a signout event to the worker", function() {
       var callback = function() {};
-      spa.signout("foo", callback);
+      spa.signout(callback);
 
-      sinon.assert.calledOnce(spa.worker.postMessage);
-      sinon.assert.calledWithExactly(spa.worker.postMessage, {
-        topic: "signout",
-        data: {nick: "foo"}
-      });
-    });
-
-    it("should wait for a signout-callback event", function(done) {
-      var callback = function(err, response) {
-        expect(err).to.equal("foo");
-        expect(response).to.equal("bar");
-        done();
-      };
-      var data = {err: "foo", response: "bar"};
-
-      spa.signout("foo", callback);
-      spa.worker.onmessage({data: {topic: "signout-callback", data: data}});
+      sinon.assert.calledOnce(spa.http.post);
+      sinon.assert.calledWithExactly(spa.http.post, "/signout", {}, callback);
     });
 
   });
@@ -99,26 +91,13 @@ describe("SPA", function() {
   describe("#connect", function() {
 
     it("should send a connect event to the worker", function() {
-      spa.connect("foo");
+      spa.worker.postMessage.reset();
+      spa.connect("fake credentials");
 
       sinon.assert.calledOnce(spa.worker.postMessage);
       sinon.assert.calledWithExactly(spa.worker.postMessage, {
         topic: "connect",
-        data: {nick: "foo"}
-      });
-    });
-
-  });
-
-  describe("#autoconnect", function() {
-
-    it("should send an autoconnect event to the worker", function() {
-      spa.autoconnect("foo");
-
-      sinon.assert.calledOnce(spa.worker.postMessage);
-      sinon.assert.calledWithExactly(spa.worker.postMessage, {
-        topic: "autoconnect",
-        data: {nick: "foo"}
+        data: "fake credentials"
       });
     });
 
@@ -127,15 +106,14 @@ describe("SPA", function() {
   describe("#callOffer", function() {
 
     it("should send a call:offer event to the worker", function() {
-      var offer = "fake offer";
-      var to = "lucy";
+      var offerMsg = new payloads.Offer({offer: "fake offer", peer: "lucy"});
 
-      spa.callOffer(offer, to);
+      spa.callOffer(offerMsg);
 
       sinon.assert.calledOnce(spa.worker.postMessage);
       sinon.assert.calledWithExactly(spa.worker.postMessage, {
         topic: "offer",
-        data: {offer: offer, to: to, textChat: undefined}
+        data: offerMsg.toJSON()
       });
     });
 
@@ -144,15 +122,17 @@ describe("SPA", function() {
   describe("#callAnswer", function() {
 
     it("should send a answer event to the worker", function() {
-      var answer = "fake answer";
-      var to = "cedric";
+      var answerMsg = new payloads.Answer({
+        answer: "fake answer",
+        peer: "lisa"
+      });
 
-      spa.callAnswer(answer, to);
+      spa.callAnswer(answerMsg);
 
       sinon.assert.calledOnce(spa.worker.postMessage);
       sinon.assert.calledWithExactly(spa.worker.postMessage, {
         topic: "answer",
-        data: {answer: answer, to: to, textChat: undefined}
+        data: answerMsg.toJSON()
       });
     });
 
@@ -161,13 +141,34 @@ describe("SPA", function() {
   describe("#callHangup", function() {
 
     it("should send a call:hangup event to the worker", function() {
-      var to = "foo";
-      spa.callHangup(to);
+      var hangupMsg = new payloads.Hangup({peer: "foo"});
+      spa.callHangup(hangupMsg);
 
       sinon.assert.calledOnce(spa.worker.postMessage);
       sinon.assert.calledWithExactly(spa.worker.postMessage, {
         topic: "hangup",
-        data: {to: to}
+        data: hangupMsg.toJSON()
+      });
+    });
+
+  });
+
+  describe("#iceCandidate", function() {
+
+    it("should send an ice:candidate event to the worker", function() {
+      var iceCandidateMsg = new payloads.IceCandidate({
+        candidate: "dummy",
+        peer: "lloyd"
+      });
+      spa.iceCandidate(iceCandidateMsg);
+
+      sinon.assert.calledOnce(spa.worker.postMessage);
+      sinon.assert.calledWithExactly(spa.worker.postMessage, {
+        topic: "ice:candidate",
+        data: {
+          peer: "lloyd",
+          candidate: "dummy"
+        }
       });
     });
 

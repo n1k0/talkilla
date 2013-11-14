@@ -3,13 +3,37 @@
 
 import mixins
 import unittest
+import time
 
 from browser_test import MultipleNodeBrowserTest
 from browser_test import output_base64_screenshot
+from config import testConfig
 
 
 class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
                            MultipleNodeBrowserTest):
+
+    def test_audio_only_call(self):
+        self.bob.signin()
+        self.larry.signin()
+
+        self.bob.openConversationWith("larry").startCall(False)
+        self.assertPendingOutgoingCall(self.bob)
+
+        self.bob.switchToChatWindow()
+        self.larry.switchToChatWindow()
+
+        self.assertIncomingCall(self.larry)
+        self.larry.acceptCall()
+        self.assertElementNotVisible(self.larry, ".incoming-text")
+
+        self.assertCallMediaPlaying(self.bob)
+        self.assertCallMediaPlaying(self.larry)
+
+        self.assertElementVisibleAndInView(self.bob, "#textchat")
+        self.assertElementVisibleAndInView(self.larry, "#textchat")
+
+        self.bob.hangupCall()
 
     def test_callback_after_timeout(self):
         self.larry.signin()
@@ -82,6 +106,7 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.assertOngoingCall(self.larry)
 
         self.bob.hangupCall()
+        self.assertChatWindowClosed(self.larry)
 
     def test_video_call_timeout(self):
         self.bob.signin()
@@ -98,6 +123,7 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
             raise
 
         self.assertCallTimedOut(self.bob)
+        self.assertChatWindowClosed(self.larry)
 
     def test_video_call_timeout_and_retry(self):
         self.bob.signin()
@@ -139,6 +165,22 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
 
         self.assertCallTimedOut(self.bob)
 
+    def test_video_call_late_hangup(self):
+        self.bob.signin()
+        self.larry.signin()
+
+        self.bob.openConversationWith("larry").startCall(True)
+
+        self.larry.switchToChatWindow()
+        self.larry.ignoreCall()
+        # Wait for the ignore to finish and the window to close
+        time.sleep(testConfig['CONVERSATION_IGNORE_DISPLAY_TIME'] / 1000)
+        self.assertChatWindowClosed(self.larry)
+
+        self.larry.openConversationWith("bob")
+        self.assertCallTimedOut(self.bob)
+        self.assertChatWindowOpen(self.larry)
+
     def test_text_chat(self):
         self.larry.signin()
         self.bob.signin()
@@ -175,7 +217,10 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
 
             self.bob.acceptCall()
 
-            self.assertElementVisible(self.larry, "#local-video")
+            self.assertElementVisible(self.larry, "#local-media")
+
+            self.bob.hangupCall()
+            self.assertChatWindowClosed(self.larry)
         except:
             output_base64_screenshot(self.bob)
             output_base64_screenshot(self.larry)

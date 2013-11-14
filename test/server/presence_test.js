@@ -15,6 +15,7 @@ var https = require("https");
 
 require("../../server/server");
 var presence = require("../../server/presence");
+var User = require("../../server/users").User;
 var logger = require("../../server/logger");
 var config = require('../../server/config').config;
 
@@ -121,15 +122,13 @@ describe("presence", function() {
 
     describe("#signin", function() {
 
-      it("should add a new user to the user list and return the nick",
+      it("should return the nick",
         function(done) {
-          var req = {body: {assertion: "fake assertion"}};
+          var req = {body: {assertion: "fake assertion"}, session: {}};
           var res = {send: sinon.spy()};
           var answer = JSON.stringify({nick: "foo"});
           sandbox.stub(presence.api, "_verifyAssertion", function(a, c) {
             c(null, "foo");
-
-            expect(users.get("foo")).to.not.equal(undefined);
 
             sinon.assert.calledOnce(res.send);
             sinon.assert.calledWithExactly(res.send, 200, answer);
@@ -140,7 +139,7 @@ describe("presence", function() {
         });
 
       it("should return a 400 if the assertion was invalid", function(done) {
-        var req = {body: {assertion: "fake assertion"}};
+        var req = {body: {assertion: "fake assertion"}, session: {}};
         var res = {send: sinon.spy()};
         var answer = JSON.stringify({error: "invalid assertion"});
         sandbox.stub(presence.api, "_verifyAssertion", function(a, c) {
@@ -160,16 +159,38 @@ describe("presence", function() {
 
     describe("#signout", function() {
 
-      it("should remove the user from the user list", function() {
-        var req = {body: {nick: "foo"}};
+      it("should disconnect the user", function() {
+        sandbox.stub(User.prototype, "disconnect");
+        var req = {session: {email: "foo", reset: function() {}}};
         var res = {send: sinon.spy()};
 
         users.add("foo");
         api.signout(req, res);
-        expect(users.get("foo")).to.equal(undefined);
+        sinon.assert.calledOnce(User.prototype.disconnect);
 
         sinon.assert.calledOnce(res.send);
         sinon.assert.calledWith(res.send, 200);
+      });
+
+      it("should reset the user's client session", function() {
+        var req = {session: {email: "foo", reset: sinon.spy()}};
+        var res = {send: function() {} };
+
+        users.add("foo");
+        api.signout(req, res);
+
+        sinon.assert.calledOnce(req.session.reset);
+      });
+
+      it("should return a 400 if the assertion was invalid", function() {
+        sandbox.stub(User.prototype, "disconnect");
+        var req = {session: {email: null}};
+        var res = {send: sinon.spy()};
+
+        api.signout(req, res);
+
+        sinon.assert.calledOnce(res.send);
+        sinon.assert.calledWith(res.send, 400);
       });
 
     });
@@ -187,37 +208,43 @@ describe("presence", function() {
         clock.restore();
       });
 
-      it("should send to all the present users an new one joined", function() {
-        users.add("foo");
-        var bar = users.add("bar").get("bar");
-        var xoo = users.add("xoo").get("xoo");
-        var oof = users.add("oof").get("oof");
-        var req = {body: {nick: "foo"}};
-        var res = {send: function() {}};
-        sandbox.stub(bar, "present").returns(true);
-        sandbox.stub(xoo, "present").returns(true);
-        sandbox.stub(bar, "send").returns(true);
-        sandbox.stub(xoo, "send").returns(true);
-        sandbox.stub(oof, "send").returns(true);
+      it("should send to all users that a new user connected", function() {
+          var bar = users.add("bar").get("bar");
+          var xoo = users.add("xoo").get("xoo");
+          var req = {session: {email: "foo"}};
+          var res = {send: function() {}};
+          sandbox.stub(bar, "send").returns(true);
+          sandbox.stub(xoo, "send").returns(true);
 
-        api.stream(req, res);
+          api.stream(req, res);
 
-        sinon.assert.calledOnce(bar.send);
-        sinon.assert.calledWith(bar.send, {userJoined: "foo"});
-        sinon.assert.calledOnce(xoo.send);
-        sinon.assert.calledWith(xoo.send, {userJoined: "foo"});
-        sinon.assert.notCalled(oof.send);
-      });
+          sinon.assert.calledOnce(bar.send);
+          sinon.assert.calledWith(bar.send, "userJoined", "foo");
+          sinon.assert.calledOnce(xoo.send);
+          sinon.assert.calledWith(xoo.send, "userJoined", "foo");
+        });
+
+      it("should send an empty list if connecting is specified in the body",
+        function(done) {
+          users.add("foo").get("foo");
+          var req = {session: {email: "foo"}, body: {firstRequest: true}};
+          var res = {send: function(code, data) {
+            expect(code).to.equal(200);
+            expect(data).to.equal(JSON.stringify([]));
+            done();
+          }};
+
+          api.stream(req, res);
+        });
 
       it("should send an empty list of events", function(done) {
-        var user = users.add("foo").get("foo");
-        var req = {body: {nick: "foo"}};
+        users.add("foo").get("foo");
+        var req = {session: {email: "foo"}};
         var res = {send: function(code, data) {
           expect(code).to.equal(200);
           expect(data).to.equal(JSON.stringify([]));
           done();
         }};
-        sandbox.stub(user, "present").returns(true);
 
         api.stream(req, res);
         clock.tick(config.LONG_POLLING_TIMEOUT * 3);
@@ -225,37 +252,72 @@ describe("presence", function() {
 
       it("should send a list of events", function(done) {
         var user = users.add("foo").get("foo");
-        var event = {some: "data"};
-        var req = {body: {nick: "foo"}};
+        var event = {topic: "some", data: "data"};
+        var req = {session: {email: "foo"}};
         var res = {send: function(code, data) {
           expect(code).to.equal(200);
           expect(data).to.equal(JSON.stringify([event]));
           done();
         }};
-        sandbox.stub(user, "present").returns(true);
 
         api.stream(req, res);
-        user.send(event);
+        user.send("some", "data");
       });
 
       it("should fail if no nick is provided", function() {
-        var req = {body: {}};
+        var req = {session: {}};
         var res = {send: sinon.spy()};
 
         api.stream(req, res);
 
         sinon.assert.calledOnce(res.send);
-        sinon.assert.calledWithExactly(res.send, 400, JSON.stringify({}));
+        sinon.assert.calledWithExactly(res.send, 400);
+      });
+
+      describe("disconnect", function() {
+
+        beforeEach(function() {
+          var req = {session: {email: "foo"}};
+          var res = {send: function() {}};
+
+          api.stream(req, res);
+        });
+
+        it("should remove the user from the list of users", function() {
+          users.get("foo").disconnect();
+
+          expect(users.get("foo")).to.be.equal(undefined);
+        });
+
+        it("should notify peers that the user left", function() {
+          var bar = users.add("bar").get("bar");
+          var xoo = users.add("xoo").get("xoo");
+          sandbox.stub(bar, "send").returns(true);
+          sandbox.stub(xoo, "send").returns(true);
+
+          users.get("foo").disconnect();
+
+          sinon.assert.calledOnce(bar.send);
+          sinon.assert.calledWith(bar.send, "userLeft", "foo");
+          sinon.assert.calledOnce(xoo.send);
+          sinon.assert.calledWith(xoo.send, "userLeft", "foo");
+        });
+
       });
 
     });
 
     describe("#callOffer", function() {
+      var req, res;
+
+      beforeEach(function() {
+        req = {body: {data: {peer: "bar"}}, session: {email: "foo"}};
+        res = {send: sinon.spy()};
+      });
+
 
       it("should forward the event to the peer after swapping the nick",
         function() {
-          var req = {body: {data: {peer: "bar"}, nick: "foo"}};
-          var res = {send: function() {}};
           var forwardedEvent = {peer: "foo"};
           var bar = users.add("foo").add("bar").get("bar");
           sandbox.stub(bar, "send");
@@ -263,28 +325,38 @@ describe("presence", function() {
           api.callOffer(req, res);
 
           sinon.assert.calledOnce(bar.send);
-          sinon.assert.calledWith(
-            bar.send, {"incoming_call": forwardedEvent});
+          sinon.assert.calledWith(bar.send, "offer", forwardedEvent);
         });
 
       it("should warn on handling offers to unknown users", function() {
         sandbox.stub(logger, "warn");
-        var req = {body: {data: {peer: "bar"}}};
-        var res = {send: function() {}};
 
         api.callOffer(req, res);
 
         sinon.assert.calledOnce(logger.warn);
       });
 
+      it("should return success", function() {
+        users.add("foo").add("bar").get("bar");
+
+        api.iceCandidate(req, res);
+
+        sinon.assert.calledOnce(res.send);
+        sinon.assert.calledWithExactly(res.send, 204);
+      });
     });
 
     describe("#callAccepted", function() {
+      var req, res;
+
+      beforeEach(function() {
+        req = {body: {data: {peer: "bar"}}, session: {email: "foo"}};
+        res = {send: sinon.spy()};
+      });
+
 
       it("should forward the event to the peer after swapping the nick",
         function() {
-          var req = {body: {data: {peer: "bar"}, nick: "foo"}};
-          var res = {send: function() {}};
           var forwardedEvent = {peer: "foo"};
           var bar = users.add("foo").add("bar").get("bar");
           sandbox.stub(bar, "send");
@@ -292,26 +364,37 @@ describe("presence", function() {
           api.callAccepted(req, res);
 
           sinon.assert.calledOnce(bar.send);
-          sinon.assert.calledWith(
-            bar.send, {"call_accepted": forwardedEvent});
+          sinon.assert.calledWith(bar.send, "answer", forwardedEvent);
         });
 
       it("should warn on handling answers to unknown users", function() {
         sandbox.stub(logger, "warn");
-        var req = {body: {data: {peer: "bar"}}};
-        var res = {send: function() {}};
 
         api.callAccepted(req, res);
 
         sinon.assert.calledOnce(logger.warn);
       });
+
+      it("should return success", function() {
+        users.add("foo").add("bar").get("bar");
+
+        api.iceCandidate(req, res);
+
+        sinon.assert.calledOnce(res.send);
+        sinon.assert.calledWithExactly(res.send, 204);
+      });
     });
 
     describe("#callHangup", function() {
+      var req, res;
+
+      beforeEach(function() {
+        req = {body: {data: {peer: "bar"}}, session: {email: "foo"}};
+        res = {send: sinon.spy()};
+      });
 
       it("should forward the event to the peer after swapping the nick",
         function() {
-          var req = {body: {data: {peer: "bar"}, nick: "foo"}};
           var res = {send: function() {}};
           var forwardedEvent = {peer: "foo"};
           var bar = users.add("foo").add("bar").get("bar");
@@ -320,18 +403,65 @@ describe("presence", function() {
           api.callHangup(req, res);
 
           sinon.assert.calledOnce(bar.send);
-          sinon.assert.calledWith(
-            bar.send, {"call_hangup": forwardedEvent});
+          sinon.assert.calledWith(bar.send, "hangup", forwardedEvent);
         });
 
       it("should warn on handling hangups to unknown users", function() {
         sandbox.stub(logger, "warn");
-        var req = {body: {data: {peer: "bar"}}};
-        var res = {send: function() {}};
 
         api.callHangup(req, res);
 
         sinon.assert.calledOnce(logger.warn);
+      });
+
+      it("should return success", function() {
+        users.add("foo").add("bar").get("bar");
+
+        api.iceCandidate(req, res);
+
+        sinon.assert.calledOnce(res.send);
+        sinon.assert.calledWithExactly(res.send, 204);
+      });
+    });
+
+    describe("#iceCandidate", function() {
+      var req, res;
+
+      beforeEach(function() {
+        req = {
+          body:    {data: {peer: "bar", candidate: "dummy"}},
+          session: {email: "foo"}
+        };
+        res = {send: sinon.spy()};
+      });
+
+      it("should forward the event to the peer after swapping the nick",
+        function() {
+          var forwardedEvent = {peer: "foo", candidate: "dummy"};
+          var bar = users.add("foo").add("bar").get("bar");
+          sandbox.stub(bar, "send");
+
+          api.iceCandidate(req, res);
+
+          sinon.assert.calledOnce(bar.send);
+          sinon.assert.calledWith(bar.send, "ice:candidate", forwardedEvent);
+        });
+
+      it("should warn on handling candidates to unknown users", function() {
+        sandbox.stub(logger, "warn");
+
+        api.iceCandidate(req, res);
+
+        sinon.assert.calledOnce(logger.warn);
+      });
+
+      it("should return success", function() {
+        users.add("foo").add("bar").get("bar");
+
+        api.iceCandidate(req, res);
+
+        sinon.assert.calledOnce(res.send);
+        sinon.assert.calledWithExactly(res.send, 204);
       });
     });
 
@@ -339,28 +469,30 @@ describe("presence", function() {
       var req, res, foo, bar;
 
       beforeEach(function() {
-        req = {body: {nick: "foo"}};
+        req = {session: {email: "foo"}};
         res = {send: sinon.spy()};
         foo = users.add("foo").get("foo");
         bar = users.add("bar").get("bar");
 
-        sandbox.stub(users, "present").returns([bar]);
         sandbox.stub(foo, "send");
       });
 
-      it("should send the list of present users to the given user",
+      it("should send the list of connected users to the given user",
         function() {
           api.presenceRequest(req, res);
 
           sinon.assert.calledOnce(foo.send);
-          sinon.assert.calledWithExactly(foo.send, {users: [bar.toJSON()]});
+          sinon.assert.calledWithExactly(foo.send, "users", [
+            foo.toJSON(),
+            bar.toJSON()
+          ]);
         });
 
       it("should return success", function() {
         api.presenceRequest(req, res);
 
         sinon.assert.calledOnce(res.send);
-        sinon.assert.calledWithExactly(res.send, 200, JSON.stringify({}));
+        sinon.assert.calledWithExactly(res.send, 204);
       });
     });
   });
