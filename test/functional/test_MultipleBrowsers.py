@@ -230,6 +230,8 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
             self.bob.openConversationWith("larry").typeChatMessage("let's chat!",
                                                                    send=True)
 
+            self.larry.switchToChatWindow().startCall(True)
+
             self.bob.acceptCall()
 
             self.assertElementVisible(self.larry, "#local-media")
