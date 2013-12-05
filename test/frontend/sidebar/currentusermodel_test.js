@@ -1,4 +1,5 @@
 /* global sinon, app */
+"use strict";
 
 describe("CurrentUser Model", function() {
   var sandbox, browserIdHandlers, currentUser;
@@ -21,46 +22,6 @@ describe("CurrentUser Model", function() {
 
   afterEach(function() {
     sandbox.restore();
-  });
-
-  describe("browserid signin", function() {
-    it("should not post a signin-requested event if the user is already " +
-      "logged in", function() {
-        currentUser.set({nick: "foo", presence: "connected"});
-        currentUser.trigger.reset();
-
-        browserIdHandlers.onlogin("fake assertion");
-
-        sinon.assert.notCalled(currentUser.trigger);
-      });
-
-    it("should post a signin-requested event when the user logs in",
-      function() {
-        browserIdHandlers.onlogin("fake assertion");
-
-        sinon.assert.calledOnce(currentUser.trigger);
-        sinon.assert.calledWithExactly(currentUser.trigger,
-                                       "signin-requested",
-                                       "fake assertion");
-      });
-  });
-
-  describe("#signin", function() {
-    it("should not call navigator.id.request if the user is already logged in",
-      function() {
-        currentUser.set({nick: "foo", presence: "connected"});
-
-        currentUser.signin();
-
-        sinon.assert.notCalled(navigator.id.request);
-      });
-
-    it("should call navigator.id.request",
-      function() {
-        currentUser.signin();
-
-        sinon.assert.calledOnce(navigator.id.request);
-      });
   });
 
   describe("#signout", function() {

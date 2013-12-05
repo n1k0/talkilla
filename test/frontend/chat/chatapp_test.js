@@ -1,35 +1,34 @@
 /*global app, chai, ChatApp, sinon, WebRTC, payloads */
-
 /* jshint expr:true */
+"use strict";
+
 var expect = chai.expect;
 
 describe("ChatApp", function() {
-  "use strict";
-
-  var sandbox, chatApp, AppPortStub;
-  var callData = {peer: "bob", peerPresence: "connected"};
-  var incomingCallData = {
-    callid: 2,
-    peer: "alice",
-    peerPresence: "connected",
-    offer: {type: "answer", sdp: "fake"}
+  var sandbox, chatApp, AppPortStub, incomingCallData;
+  var callData = {
+    capabilities: ["call", "move"],
+    peer: "bob",
+    peerPresence: "connected"
   };
-
-  function fakeSDP(str) {
-    return {
-      str: str,
-      contains: function(what) {
-        return this.str.indexOf(what) !== -1;
-      }
-    };
-  }
-
-  var fakeOffer = {type: "offer", sdp: fakeSDP("\nm=video aaa\nm=audio bbb")};
-  var fakeAnswer = {type: "answer", sdp: fakeSDP("\nm=video ccc\nm=audio ddd")};
+  var fakeOffer = {type: "offer", sdp: "\nm=video aaa\nm=audio bbb"};
+  var fakeAnswer = {type: "answer", sdp: "\nm=video ccc\nm=audio ddd"};
   var fakeDataChannel = {fakeDataChannel: true};
 
   beforeEach(function() {
-    AppPortStub = _.extend({postEvent: sinon.spy()}, Backbone.Events);
+    AppPortStub = _.extend({post: sinon.spy()}, Backbone.Events);
+
+    incomingCallData = {
+      capabilities: ["call", "move"],
+      peer: "alice",
+      peerPresence: "connected",
+      offer: {
+        callid: 2,
+        peer: "alice",
+        offer: {type: "answer", sdp: "fake"}
+      },
+      user: "bob"
+    };
     sandbox = sinon.sandbox.create();
     sandbox.stub(window, "AppPort").returns(AppPortStub);
     sandbox.stub(window, "Audio").returns({
@@ -77,7 +76,7 @@ describe("ChatApp", function() {
     sandbox.stub(ChatApp.prototype, handler);
     chatApp = new ChatApp();
 
-    chatApp.port.trigger(event, data);
+    chatApp.appPort.trigger(event, data);
 
     sinon.assert.calledOnce(chatApp[handler]);
     sinon.assert.calledWithExactly(chatApp[handler], data);
@@ -146,8 +145,8 @@ describe("ChatApp", function() {
   it("should post talkilla.chat-window-ready to the worker", function() {
       chatApp = new ChatApp();
 
-      sinon.assert.calledOnce(chatApp.port.postEvent);
-      sinon.assert.calledWithExactly(chatApp.port.postEvent,
+      sinon.assert.calledOnce(chatApp.appPort.post);
+      sinon.assert.calledWithExactly(chatApp.appPort.post,
         "talkilla.chat-window-ready", {});
     });
 
@@ -252,14 +251,10 @@ describe("ChatApp", function() {
       });
 
       it("should not set the peer if upgrading a call", function() {
-        var incomingCallDataUpgrade = {
-          peer: "alice",
-          upgrade: true,
-          offer: {type: "answer", sdp: "fake"}
-        };
+        incomingCallData.offer.upgrade = true;
 
         chatApp.peer.set({nick: "bob"});
-        chatApp._onIncomingConversation(incomingCallDataUpgrade);
+        chatApp._onIncomingConversation(incomingCallData);
 
         expect(chatApp.peer.get("nick")).to.equal("bob");
       });
@@ -271,7 +266,7 @@ describe("ChatApp", function() {
 
         sinon.assert.calledOnce(chatApp.call.incoming);
         sinon.assert.calledWithMatch(chatApp.call.incoming,
-          new app.payloads.Offer(incomingCallData));
+          new app.payloads.Offer(incomingCallData.offer));
       });
 
       it("should play the incoming call sound", function() {
@@ -293,18 +288,30 @@ describe("ChatApp", function() {
     });
 
     describe("#_onCallEstablishment", function() {
-      var answer;
-
-      beforeEach(function() {
-        answer = {answer: "fake"};
+      it("should set a call as established", function() {
+        var answerMessage = {answer: fakeAnswer};
         sandbox.stub(chatApp.call, "establish");
-      });
 
-      it("should set the call as established", function() {
-        chatApp._onCallEstablishment(answer);
+        chatApp._onCallEstablishment(answerMessage);
 
         sinon.assert.calledOnce(chatApp.call.establish);
-        sinon.assert.calledWithExactly(chatApp.call.establish, answer);
+        sinon.assert.calledWithExactly(chatApp.call.establish, answerMessage);
+      });
+
+      it("should set a text chat conversation as established", function() {
+        var answerMessage = {
+          answer: {
+            type: "answer",
+            sdp: "\na=sctpmap:2 webrtc-datachannel 16"
+          }
+        };
+        sandbox.stub(chatApp.textChat, "establish");
+
+        chatApp._onCallEstablishment(answerMessage);
+
+        sinon.assert.calledOnce(chatApp.textChat.establish);
+        sinon.assert.calledWithExactly(chatApp.textChat.establish,
+                                       answerMessage.answer);
       });
     });
 
@@ -357,8 +364,8 @@ describe("ChatApp", function() {
 
         chatApp._onCallHangup(fakeHangupMsg);
 
-        sinon.assert.called(chatApp.port.postEvent);
-        sinon.assert.calledWith(chatApp.port.postEvent,
+        sinon.assert.called(chatApp.appPort.post);
+        sinon.assert.calledWith(chatApp.appPort.post,
                                 "talkilla.call-hangup");
         sinon.assert.called(window.close);
       });
@@ -374,8 +381,8 @@ describe("ChatApp", function() {
           });
           chatApp._onSendOffer(offerMsg);
 
-          sinon.assert.called(chatApp.port.postEvent);
-          sinon.assert.calledWith(chatApp.port.postEvent,
+          sinon.assert.called(chatApp.appPort.post);
+          sinon.assert.calledWith(chatApp.appPort.post,
                                   "talkilla.call-offer");
         });
     });
@@ -390,8 +397,8 @@ describe("ChatApp", function() {
 
           chatApp._onSendAnswer(answerMsg);
 
-          sinon.assert.called(chatApp.port.postEvent);
-          sinon.assert.calledWith(chatApp.port.postEvent,
+          sinon.assert.called(chatApp.appPort.post);
+          sinon.assert.calledWith(chatApp.appPort.post,
                                   "talkilla.call-answer");
         });
     });
@@ -402,8 +409,8 @@ describe("ChatApp", function() {
 
         chatApp.call.trigger("send-timeout", fakeHangupMsg);
 
-        sinon.assert.called(chatApp.port.postEvent);
-        sinon.assert.calledWith(chatApp.port.postEvent,
+        sinon.assert.called(chatApp.appPort.post);
+        sinon.assert.calledWith(chatApp.appPort.post,
                                 "talkilla.call-hangup");
       });
     });
@@ -429,6 +436,32 @@ describe("ChatApp", function() {
     });
 
     describe("Events", function() {
+
+      // XXX: Other event listener tests should be migrated to this formalism.
+      describe("talkilla.conversation-open", function() {
+        it("should set SPA capabilities from outgoing conversation context",
+          function(done) {
+            var chatApp = new ChatApp();
+            chatApp.appPort.on("talkilla.conversation-open", function() {
+              expect(chatApp.call.get("capabilities"))
+                .eql(callData.capabilities);
+              done();
+            }).trigger("talkilla.conversation-open", callData);
+          });
+      });
+
+      describe("talkilla.conversation-incoming", function() {
+        it("should set SPA capabilities from incoming conversation context",
+          function(done) {
+            var chatApp = new ChatApp();
+            chatApp.appPort.on("talkilla.conversation-incoming", function() {
+              expect(chatApp.call.get("capabilities"))
+                .eql(incomingCallData.capabilities);
+              done();
+            }).trigger("talkilla.conversation-incoming", incomingCallData);
+          });
+      });
+
       describe("ice:candidate-ready", function() {
         it("should post a talkilla:ice-candidate message to the worker",
           function() {
@@ -440,10 +473,10 @@ describe("ChatApp", function() {
 
           chatApp.webrtc.trigger("ice:candidate-ready", "dummy");
 
-          sinon.assert.called(AppPortStub.postEvent);
-          sinon.assert.calledWith(AppPortStub.postEvent,
+          sinon.assert.called(AppPortStub.post);
+          sinon.assert.calledWith(AppPortStub.post,
                                   "talkilla.ice-candidate",
-                                  iceCandidateMsg.toJSON());
+                                  iceCandidateMsg);
         });
       });
 
@@ -453,7 +486,7 @@ describe("ChatApp", function() {
 
           sandbox.stub(chatApp.webrtc, "addIceCandidate");
 
-          chatApp.port.trigger("talkilla.ice-candidate", {
+          chatApp.appPort.trigger("talkilla.ice-candidate", {
             candidate: candidate
           });
 
@@ -474,6 +507,111 @@ describe("ChatApp", function() {
           sinon.assert.called(chatApp.call.hangup);
           sinon.assert.calledWith(chatApp.call.hangup);
         });
+      });
+
+      describe("initiate-move", function() {
+        it("should post a talkilla.initiate-move message to the worker.",
+          function() {
+          var moveMsg = new payloads.Move({
+            peer: "lloyd",
+            callid: 42
+          });
+
+          chatApp.call.trigger("initiate-move", moveMsg);
+
+          sinon.assert.called(AppPortStub.post);
+          sinon.assert.calledWith(AppPortStub.post,
+                                  "talkilla.initiate-move",
+                                  moveMsg.toJSON());
+        });
+      });
+
+      describe("talkilla.move-accept", function() {
+        it("should hangup current call if matching its callid", function() {
+          sandbox.stub(chatApp.call, "hangup");
+          chatApp.call.callid = 42;
+
+          chatApp.appPort.trigger("talkilla.move-accept", {
+            peer: "lloyd",
+            callid: 42
+          });
+
+          sinon.assert.calledOnce(chatApp.call.hangup);
+          sinon.assert.calledWithExactly(chatApp.call.hangup, false);
+        });
+
+        it("shouldn't hangup current call if callid doesn't match", function() {
+          sandbox.stub(chatApp.call, "hangup");
+          chatApp.call.callid = 1337;
+
+          chatApp.appPort.trigger("talkilla.move-accept", {
+            peer: "lloyd",
+            callid: 42
+          });
+
+          sinon.assert.notCalled(chatApp.call.hangup);
+        });
+      });
+
+      describe("talkilla.hold", function() {
+        it("should put the call on hold if matching its callid", function() {
+          sandbox.stub(chatApp.call, "hold");
+          chatApp.call.callid = 42;
+
+          chatApp.appPort.trigger("talkilla.hold", {
+            peer: "lloyd",
+            callid: 42
+          });
+
+          sinon.assert.calledOnce(chatApp.call.hold);
+        });
+
+        it("shouldn't put the call on hold if callid doesn't match",
+          function() {
+            sandbox.stub(chatApp.call, "hold");
+            chatApp.call.callid = 1337;
+
+            chatApp.appPort.trigger("talkilla.hold", {
+              peer: "lloyd",
+              callid: 42
+            });
+
+            sinon.assert.notCalled(chatApp.call.hold);
+          });
+      });
+
+      describe("talkilla.resume", function() {
+        it("should resume the call if matching its callid", function() {
+          sandbox.stub(chatApp.call, "resume");
+          chatApp.call.callid = 42;
+
+          chatApp.appPort.trigger("talkilla.resume", {
+            peer: "lloyd",
+            callid: 42,
+            media: {
+              video: true
+            }
+          });
+
+          sinon.assert.calledOnce(chatApp.call.resume);
+          sinon.assert.calledWithExactly(chatApp.call.resume, true);
+        });
+
+        it("shouldn't put resume the call if callid doesn't match",
+          function() {
+            sandbox.stub(chatApp.call, "resume");
+            chatApp.call.callid = 1337;
+
+            chatApp.appPort.trigger("talkilla.resume", {
+              peer: "lloyd",
+              callid: 42,
+              media: {
+                video: true
+              }
+            });
+
+            sinon.assert.notCalled(chatApp.call.resume);
+          });
       });
     });
 

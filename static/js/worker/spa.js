@@ -1,7 +1,14 @@
 /* global importScripts, BackboneEvents, HTTP, payloads */
 /* jshint unused:false */
 
+/**
+ * SPA container.
+ *
+ * Wraps a SPA in a sub worker.
+ */
 var SPA = (function() {
+  "use strict";
+
   function SPA(options) {
     if (!options || !options.src)
       throw new Error("missing parameter: src");
@@ -9,6 +16,9 @@ var SPA = (function() {
     this.worker = new Worker(options.src);
     this.worker.onmessage = this._onMessage.bind(this);
     this.http = new HTTP();
+
+    // XXX Possibly expose a configuration object for storing SPA settings.
+    this.capabilities = [];
   }
 
   SPA.prototype = {
@@ -17,11 +27,14 @@ var SPA = (function() {
       var topic = event.data.topic;
       var data = event.data.data;
 
-      var mapping = {
+      var topicPayloads = {
         "offer": payloads.Offer,
         "answer": payloads.Answer,
         "hangup": payloads.Hangup,
-        "ice:candidate": payloads.IceCandidate
+        "ice:candidate": payloads.IceCandidate,
+        "move-accept": payloads.MoveAccept,
+        "hold": payloads.Hold,
+        "resume": payloads.Resume
       };
 
       if (topic === "message") {
@@ -29,31 +42,24 @@ var SPA = (function() {
         data = data.shift();
         this.trigger("message", type, data);
         this.trigger("message:" + type, data);
-      } else if (topic in mapping) {
-        var Constructor = mapping[topic];
-        this.trigger(topic, new Constructor(data));
+      } else if (topic in topicPayloads) {
+        var Payload = topicPayloads[topic];
+        this.trigger(topic, new Payload(data));
       } else {
         this.trigger(topic, data);
       }
     },
 
     _send: function(topic, data) {
-      // TODO: check the type of data and if it's a payload (like
-      // payloads.Offer) call toJSON on it. The SPA interface should
-      // not send custom objects.
       this.worker.postMessage({topic: topic, data: data});
-    },
-
-    signin: function(assertion, callback) {
-      this.http.post("/signin", {assertion: assertion}, callback);
-    },
-
-    signout: function(callback) {
-      this.http.post("/signout", {}, callback);
     },
 
     connect: function(credentials) {
       this._send("connect", credentials);
+    },
+
+    forgetCredentials: function() {
+      this._send("forget-credentials");
     },
 
     /**
@@ -63,7 +69,7 @@ var SPA = (function() {
      * call.
      */
     callOffer: function(offerMsg) {
-      this._send("offer", offerMsg.toJSON());
+      this._send("offer", offerMsg);
     },
 
     /**
@@ -73,7 +79,7 @@ var SPA = (function() {
      * a call.
      */
     callAnswer: function(answerMsg) {
-      this._send("answer", answerMsg.toJSON());
+      this._send("answer", answerMsg);
     },
 
     /**
@@ -83,7 +89,7 @@ var SPA = (function() {
      * call.
      */
     callHangup: function(hangupMsg) {
-      this._send("hangup", hangupMsg.toJSON());
+      this._send("hangup", hangupMsg);
     },
 
     /**
@@ -93,11 +99,11 @@ var SPA = (function() {
      * payload to update the available ICE candidates.
      */
     iceCandidate: function(iceCandidateMsg) {
-      this._send("ice:candidate", iceCandidateMsg.toJSON());
+      this._send("ice:candidate", iceCandidateMsg);
     },
 
-    presenceRequest: function() {
-      this._send("presence:request");
+    initiateMove: function(moveMsg) {
+      this._send("initiate-move", moveMsg.toJSON());
     }
   };
 

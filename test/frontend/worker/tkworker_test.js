@@ -1,10 +1,10 @@
-/*global chai, sinon, TkWorker, PortCollection, ContactsDB, UserData,
-  browserPort:true */
+/*global chai, sinon, TkWorker, PortCollection, SPA, ContactsDB, SPADB,
+  UserData, browserPort:true */
+"use strict";
 
 var expect = chai.expect;
 
 describe("tkWorker", function() {
-  "use strict";
   var sandbox, worker;
 
   beforeEach(function () {
@@ -15,6 +15,9 @@ describe("tkWorker", function() {
       user: new UserData({}, {}),
       contactsDb: new ContactsDB({
         dbname: "TalkillaContactsTest"
+      }),
+      spaDb: new SPADB({
+        dbname: "EnabledSPATest"
       })
     });
   });
@@ -24,6 +27,16 @@ describe("tkWorker", function() {
     browserPort = undefined;
     worker.contactsDb.drop(function() {
       done();
+    });
+  });
+
+  describe("#initialize", function() {
+    it("should load the SPAs", function() {
+      sandbox.stub(worker, "loadSPAs");
+
+      worker.initialize();
+
+      sinon.assert.calledOnce(worker.loadSPAs);
     });
   });
 
@@ -51,17 +64,10 @@ describe("tkWorker", function() {
 
       sinon.assert.calledOnce(worker.contactsDb.close);
     });
-
-    it("should broadcast the talkilla.logout-success event", function() {
-      sandbox.stub(worker.ports, "broadcastEvent");
-
-      worker.closeSession();
-
-      sinon.assert.calledOnce(worker.ports.broadcastEvent);
-    });
   });
 
   describe("#loadContacts", function() {
+
     beforeEach(function(done) {
       // Store a contact for the tests
       worker.contactsDb.add("foo", function() {
@@ -160,6 +166,47 @@ describe("tkWorker", function() {
         {nick: "bar", presence: "disconnected"}
       ]);
     });
+  });
+
+  describe("#loadSPAs", function() {
+
+    var spa;
+
+    beforeEach(function(done) {
+      var spec = {
+        name: "Random SPA",
+        src: "/path/to/spa",
+        credentials: "fake credentials"
+      };
+      spa = {connect: sinon.spy(), on: function() {}};
+      sandbox.stub(window, "SPA").returns(spa);
+      worker.spaDb.add(spec, function() {
+        done();
+      });
+    });
+
+    afterEach(function(done) {
+      worker.spaDb.drop(function() {
+        done();
+      });
+    });
+
+    it("should instantiate a new SPA with the given src", function(done) {
+      worker.loadSPAs(function() {
+        sinon.assert.calledOnce(SPA);
+        sinon.assert.calledWithExactly(SPA, {src: "/path/to/spa"});
+        done();
+      });
+    });
+
+    it("should connect the created SPA with given credentials",
+      function(done) {
+        worker.loadSPAs(function() {
+          sinon.assert.calledOnce(spa.connect);
+          sinon.assert.calledWithExactly(spa.connect, "fake credentials");
+          done();
+        });
+      });
   });
 });
 

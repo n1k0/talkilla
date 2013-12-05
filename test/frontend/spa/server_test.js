@@ -1,5 +1,6 @@
 /* global Server */
 /* global describe, beforeEach, afterEach, sinon, it, expect, payloads */
+"use strict";
 
 describe("Server", function() {
   var sandbox, server;
@@ -26,7 +27,8 @@ describe("Server", function() {
 
       sinon.assert.calledOnce(server.http.post);
       sinon.assert.calledWith(server.http.post, "/stream", {
-        firstRequest: true
+        firstRequest: true,
+        timeout: 21000,
       });
     });
 
@@ -41,12 +43,12 @@ describe("Server", function() {
       server.connect({nick: "foo"});
     });
 
-    it("should trigger a disconnected event if the request has been aborted",
+    it("should trigger a network-error event if the request has been aborted",
       function(done) {
         sandbox.stub(server.http, "post", function(method, nick, callback) {
           callback(0, "request aborted");
         });
-        server.on("disconnected", function() {
+        server.on("network-error", function() {
           done();
         });
 
@@ -78,6 +80,30 @@ describe("Server", function() {
 
   });
 
+  describe("#disconnect", function() {
+
+    it("should abort the current long polling connection", function() {
+      server.currentXHR = {abort: sinon.spy()};
+      server.disconnect();
+
+      sinon.assert.calledOnce(server.currentXHR.abort);
+    });
+
+  });
+
+  describe("#signout", function() {
+
+    it("should sign out the spa from the server", function() {
+      sandbox.stub(server.http, "post");
+
+      server.signout();
+
+      sinon.assert.calledOnce(server.http.post);
+      sinon.assert.calledWithExactly(server.http.post, "/signout", {});
+    });
+
+  });
+
   describe("#_longPolling", function() {
 
     it("should request a stream", function() {
@@ -88,12 +114,12 @@ describe("Server", function() {
       sinon.assert.calledWith(server.http.post, "/stream");
     });
 
-    it("should trigger a disconnected event if the request has been aborted",
+    it("should trigger a network-error event if the request has been aborted",
       function(done) {
         sandbox.stub(server.http, "post", function(method, data, callback) {
           callback(0, "request aborted");
         });
-        server.on("disconnected", function() {
+        server.on("network-error", function() {
           done();
         });
         server._longPolling([]);

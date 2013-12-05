@@ -1,5 +1,6 @@
 /* global sinon, SPAPort, Server, TalkillaSPA, expect */
 /* jshint unused:false */
+"use strict";
 
 describe("TalkillaSPA", function() {
   var sandbox, port, server, spa;
@@ -8,7 +9,15 @@ describe("TalkillaSPA", function() {
     sandbox = sinon.sandbox.create();
     port = new SPAPort();
     server = new Server();
-    spa = new TalkillaSPA(port, server);
+    spa = new TalkillaSPA(port, server, {capabilities: ["call", "move"]});
+  });
+
+  describe("#constructor", function() {
+    it("should accept capabilities", function() {
+      expect(spa.capabilities).to.be.a("array");
+      expect(spa.capabilities).eql(["call", "move"]);
+    });
+
   });
 
   describe("#_onServerEvent", function() {
@@ -22,20 +31,21 @@ describe("TalkillaSPA", function() {
       sinon.assert.calledOnce(spa.port.post);
       sinon.assert.calledWithExactly(
         spa.port.post, "connected", {
-          addresses: [{type: "email", value: "foo"}]
+          addresses: [{type: "email", value: "foo"}],
+          capabilities: ["call", "move"]
         }
       );
     });
 
-    it("should post a disconnected event to the port", function() {
+    it("should post a network-error event to the port", function() {
       var event = "fake event";
       sandbox.stub(spa.port, "post");
 
-      spa.server.trigger("disconnected", event);
+      spa.server.trigger("network-error", event);
 
       sinon.assert.calledOnce(spa.port.post);
       sinon.assert.calledWithExactly(
-        spa.port.post, "disconnected", "fake event");
+        spa.port.post, "network-error", "fake event");
     });
 
     it("should post a reauth-needed event to the port", function() {
@@ -149,6 +159,25 @@ describe("TalkillaSPA", function() {
 
         spa.port.trigger("ice:candidate", {peer: "foo", candidate: candidate});
       });
+
+  });
+
+  describe("#_onForgetCredentials", function() {
+
+    it("should disconnect the SPA from the server", function() {
+      sandbox.stub(spa.server, "disconnect");
+
+      spa.port.trigger("forget-credentials");
+
+      sinon.assert.calledOnce(spa.server.disconnect);
+    });
+
+    it("should signout the SPA from the server", function() {
+      sandbox.stub(spa.server, "signout");
+
+      spa.port.trigger("forget-credentials");
+      sinon.assert.calledOnce(spa.server.signout);
+    });
 
   });
 

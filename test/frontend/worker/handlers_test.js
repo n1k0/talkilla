@@ -1,7 +1,7 @@
 /*global chai, sinon, Port, handlers, currentConversation:true, UserData,
-  _presenceSocket:true, browserPort:true, tkWorker, Conversation, SPA,
-  spa:true, payloads */
+  browserPort:true, tkWorker, Conversation, SPA, spa:true, payloads */
 /* jshint expr:true */
+"use strict";
 
 var expect = chai.expect;
 
@@ -20,6 +20,34 @@ describe('handlers', function() {
   afterEach(function() {
     sandbox.restore();
     browserPort = undefined;
+  });
+
+  describe("social.initialize", function() {
+    beforeEach(function() {
+      sandbox.stub(tkWorker, "initialize");
+      sandbox.stub(tkWorker.ports, "remove");
+    });
+
+    it("should save the browser port", function() {
+      browserPort = undefined;
+
+      handlers['social.initialize']();
+
+      expect(browserPort).to.equal(handlers);
+    });
+
+    it("should remove the port from the list of ports", function() {
+      handlers['social.initialize']();
+
+      sinon.assert.calledOnce(tkWorker.ports.remove);
+      sinon.assert.calledWithExactly(tkWorker.ports.remove, handlers);
+    });
+
+    it("should initialize the worker", function() {
+      handlers['social.initialize']();
+
+      sinon.assert.calledOnce(tkWorker.initialize);
+    });
   });
 
   describe("social.port-closing", function() {
@@ -42,7 +70,7 @@ describe('handlers', function() {
 
     it("should clear the current conversation on receiving " +
        "social.port-closing for the conversation port", function() {
-        currentConversation = new Conversation();
+        currentConversation = new Conversation({}, spa);
         currentConversation.port = port;
 
         handlers['social.port-closing'].bind(port)();
@@ -124,6 +152,22 @@ describe('handlers', function() {
       tkWorker.user.reset();
     });
 
+    it("should notify new sidebars of current users presence",
+      function() {
+        var fakeUsersList = [1, 2, 3];
+        sandbox.stub(tkWorker.users, "toArray").returns(fakeUsersList);
+
+        handlers.postEvent = sinon.spy();
+        handlers['talkilla.sidebar-ready']({
+          topic: "talkilla.sidebar-ready",
+          data: {}
+        });
+
+        sinon.assert.called(handlers.postEvent);
+        sinon.assert.calledWithExactly(
+          handlers.postEvent, "talkilla.users", fakeUsersList);
+      });
+
     it("should notify new sidebars the worker is ready",
       function() {
         handlers.postEvent = sinon.spy();
@@ -132,8 +176,9 @@ describe('handlers', function() {
           data: {}
         });
 
-        sinon.assert.calledOnce(handlers.postEvent);
-        sinon.assert.calledWith(handlers.postEvent, "talkilla.worker-ready");
+        sinon.assert.called(handlers.postEvent);
+        sinon.assert.calledWithExactly(
+          handlers.postEvent, "talkilla.worker-ready");
       });
 
   });
@@ -148,61 +193,43 @@ describe('handlers', function() {
     });
 
     it("should instantiate a new SPA with the given src", function() {
+      sandbox.stub(tkWorker.spaDb, "add", function(spec, callback) {
+        callback(null, spec);
+
+        sinon.assert.calledOnce(SPA);
+        sinon.assert.calledWithExactly(SPA, {src: "/path/to/spa"});
+      });
+
       handlers["talkilla.spa-enable"]({
         data: {src: "/path/to/spa", credentials: "fake credentials"}
       });
-
-      sinon.assert.calledOnce(SPA);
-      sinon.assert.calledWithExactly(SPA, {src: "/path/to/spa"});
     });
 
     it("should connect the created SPA with given credentials", function() {
+      sandbox.stub(tkWorker.spaDb, "add", function(spec, callback) {
+        callback(null, spec);
+
+        sinon.assert.calledOnce(spa.connect);
+        sinon.assert.calledWithExactly(spa.connect, "fake credentials");
+      });
+
       handlers["talkilla.spa-enable"]({
         data: {src: "/path/to/spa", credentials: "fake credentials"}
       });
-
-      sinon.assert.calledOnce(spa.connect);
-      sinon.assert.calledWithExactly(spa.connect, "fake credentials");
     });
 
   });
 
-  describe("talkilla.presence-request", function () {
-    beforeEach(function() {
-      tkWorker.user = new UserData();
-      sandbox.stub(tkWorker.user, "send");
-      sandbox.stub(spa, "presenceRequest");
+  describe("talkilla.initiate-move", function() {
+    it("should notify the SPA a call moving is initiated", function() {
+      sandbox.stub(spa, "initiateMove");
+      var moveMsg = new payloads.Move({peer: "chuck", callid: 42});
+
+      handlers["talkilla.initiate-move"]({data: moveMsg});
+
+      sinon.assert.calledOnce(spa.initiateMove);
+      sinon.assert.calledWithExactly(spa.initiateMove, moveMsg);
     });
-
-    afterEach(function() {
-      tkWorker.user.reset();
-    });
-
-    it("should notify new sidebars of current users",
-      function() {
-        tkWorker.user.name = "jb";
-        _presenceSocket = {send: sinon.spy()};
-        tkWorker.users.reset();
-        handlers.postEvent = sinon.spy();
-        handlers['talkilla.presence-request']({
-          topic: "talkilla.presence-request",
-          data: {}
-        });
-
-        sinon.assert.calledWith(handlers.postEvent, "talkilla.users");
-      });
-
-    it("should request for the initial presence state " +
-       "if there is no current users", function() {
-        tkWorker.users.reset();
-        handlers['talkilla.presence-request']({
-          topic: "talkilla.presence-request",
-          data: {}
-        });
-
-        sinon.assert.calledOnce(spa.presenceRequest);
-      });
-
   });
 
   describe("talkilla.call-offer", function() {
@@ -288,6 +315,36 @@ describe('handlers', function() {
         sinon.assert.calledOnce(spa.iceCandidate);
         sinon.assert.calledWithExactly(spa.iceCandidate, iceCandidateMsg);
       });
+  });
+
+  describe("talkilla.spa-forget-credentials", function() {
+
+    it("should make the spa forget credentials", function() {
+      sandbox.stub(spa, "forgetCredentials");
+      handlers['talkilla.spa-forget-credentials']({
+        topic: "talkilla.spa-forget-credentials",
+        data: "TalkillaSPA" // XXX: part of the interface but not used
+                            // for now.
+      });
+
+      sinon.assert.calledOnce(spa.forgetCredentials);
+    });
+
+  });
+
+  describe("talkilla.spa-disable", function() {
+
+    it("should drop the SPA database", function() {
+      sandbox.stub(tkWorker.spaDb, "drop");
+      handlers['talkilla.spa-disable']({
+        topic: "talkilla.spa-disable",
+        data: "TalkillaSPA" // XXX: part of the interface but not used
+                            // for now.
+      });
+
+      sinon.assert.calledOnce(tkWorker.spaDb.drop);
+    });
+
   });
 
 });

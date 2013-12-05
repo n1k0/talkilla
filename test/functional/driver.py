@@ -81,8 +81,11 @@ class Driver(WebDriver):
         # at the wrong time, or not fully loaded.
         self.waitForElement("#signin", visible=True)
         self.add_cookie({"name": "test email", "value": self.nick})
-        self.clickElement("#signin")
+        self.switch_to_frame("spa-setup")
+        self.waitForElement("#talkilla-signin", visible=True)
+        self.clickElement("#talkilla-signin")
         # Ensure we've completed logging in before proceeding
+        self.switchToSidebar()
         self.waitForElement("#signout", visible=True)
         return self
 
@@ -119,16 +122,24 @@ class Driver(WebDriver):
                     .childNodes[0].click();
         """)
 
-    def sendChatMessage(self, message):
-        """ Sends a text chat message.
+    def closeConversationWindow(self):
+        """ Close a conversation Window """
+        self.detectWindowClose("window.close()")
+
+    def typeChatMessage(self, message, send=False):
+        """ Types a text chat message.
 
             Args:
             - message: Text chat message contents
+
+            Kwargs:
+            - send: Submit form to send the message? (default: False)
         """
         self.switchToChatWindow()
         input_text = self.waitForElement("form input", visible=True)
         input_text.send_keys(message)
-        input_text.send_keys(Keys.RETURN)
+        if send is True:
+            input_text.send_keys(Keys.RETURN)
 
     # We use double the default timeout here as we've seen slow startup times
     # on Travis but we don't want to extend the timeout for everything.

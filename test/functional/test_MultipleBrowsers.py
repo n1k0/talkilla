@@ -185,15 +185,16 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.larry.signin()
         self.bob.signin()
 
-        self.bob.openConversationWith("larry").sendChatMessage("hi!")
+        self.bob.openConversationWith("larry").typeChatMessage("hi!",
+                                                               send=True)
         self.assertChatMessageContains(self.bob, "hi!", line=1)
         self.assertChatMessageContains(self.larry, "hi!", line=1)
 
-        self.larry.sendChatMessage("yay!")
+        self.larry.typeChatMessage("yay!", send=True)
         self.assertChatMessageContains(self.bob, "yay!", line=2)
         self.assertChatMessageContains(self.larry, "yay!", line=2)
 
-        self.bob.sendChatMessage("ok")
+        self.bob.typeChatMessage("ok", send=True)
         self.assertChatMessageContains(self.bob, "ok", line=3)
         self.assertChatMessageContains(self.larry, "ok", line=3)
 
@@ -207,13 +208,27 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
         self.larry.signout()
         self.assertConversationPresenceIconShows(self.bob, "disconnected")
 
+    def test_message_placeholder(self):
+        self.larry.signin()
+        self.bob.signin()
+
+        self.bob.openConversationWith("larry")
+        self.assertMessagePlaceholderEquals(self.bob,
+                                            "Type something to start chatting")
+
+        self.bob.typeChatMessage("wazza", send=True)
+        self.assertMessagePlaceholderEquals(self.bob, "")
+
+        self.bob.closeConversationWindow()
+        self.bob.openConversationWith("larry")
+        self.assertMessagePlaceholderEquals(self.bob, "")
+
     def test_local_video_visible_to_call_upgrader(self):
         self.bob.signin()
         self.larry.signin()
         try:
-            self.bob.openConversationWith("larry").sendChatMessage("let's chat!")
-
-            self.larry.switchToChatWindow().startCall(True)
+            self.bob.openConversationWith("larry").typeChatMessage("let's chat!",
+                                                                   send=True)
 
             self.bob.acceptCall()
 
@@ -226,6 +241,19 @@ class MultipleBrowsersTest(mixins.WithBob, mixins.WithLarry,
             output_base64_screenshot(self.larry)
             raise
 
+    def test_contact_is_typing(self):
+        self.larry.signin()
+        self.bob.signin()
+
+        self.larry.openConversationWith("bob")
+        self.bob.openConversationWith("larry").typeChatMessage("Hey Buddy!",
+                                                               send=True)
+
+        self.waitForNewMessageReceived(self.larry)
+        self.bob.typeChatMessage("wazzza")
+        self.assertIsTyping(self.larry)
+
+        self.assertNotTyping(self.larry)
 
 if __name__ == "__main__":
     unittest.main(catchbreak=True)

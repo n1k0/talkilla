@@ -1,16 +1,19 @@
-/* global indexedDB, importScripts, SPA, HTTP, ContactsDB, CurrentUsers,
-   loadConfig, payloads  */
+/* global indexedDB, importScripts, SPA, HTTP, ContactsDB, SPADB,
+   CurrentUsers, loadConfig, payloads  */
 /* jshint unused:false */
+"use strict";
 
 // XXX: Try to import Backbone only in files that need it (and check
 // if multiple imports cause problems).
 importScripts('../vendor/backbone-events-standalone-0.1.5.js');
 importScripts('/config.js', 'payloads.js', 'addressbook/contactsdb.js');
-importScripts('worker/http.js', 'worker/users.js', 'worker/spa.js');
+importScripts('spadb.js', '/js/http.js', 'worker/users.js', 'worker/spa.js');
 
 var gConfig = loadConfig();
 var browserPort;
 var currentConversation;
+// XXX This should definitely not be exposed globally as we'll need
+// to support multiple SPAs in a near future.
 var spa;
 // XXX Initialised at end of file whilst we move everything
 // into it.
@@ -26,16 +29,19 @@ var tkWorker;
  * a single conversation window, and these will need to be changed
  * at the appropriate time.
  *
- * @param {Object|undefined}  data  Initial data
- *
- * data properties:
- *
- * peer: The id of the peer this conversation window is for.
- * offer: optional data for incoming calls.
+ * @param {SPA} spa: the SPA wrapper instance.
+ * @param {String} peer: the Peer for the conversation
+ * @param {payloads.Offer} offer: Optional, the offer message for an
+ *                                incoming conversation
  */
-function Conversation(data) {
-  this.data = data;
+function Conversation(spa, peer, offer) {
+  this.peer = peer;
   this.port = undefined;
+  this.capabilities = spa.capabilities;
+
+  // offer and messageQueue are temporary stores
+  // until the window has been opened.
+  this.offer = offer;
   this.messageQueue = [];
 
   browserPort.postEvent('social.request-chat', 'chat.html');
@@ -51,34 +57,33 @@ Conversation.prototype = {
   windowOpened: function(port) {
     this.port = port;
 
-    if (tkWorker.user.name) {
-      // If there's currenty a logged in user,
-      port.postEvent('talkilla.login-success', {
-        username: tkWorker.user.name
-      });
-      this.data.user = tkWorker.user.name;
-    }
-
-    tkWorker.contactsDb.add({username: this.data.peer}, function(err) {
+    // For collected contacts
+    tkWorker.contactsDb.add({username: this.peer}, function(err) {
       if (err)
         tkWorker.ports.broadcastError(err);
     });
 
-    // retrieve peer presence information
-    this.data.peerPresence = tkWorker.users.getPresence(this.data.peer);
+    var msg = {
+      capabilities: this.capabilities,
+      peer: this.peer,
+      peerPresence: tkWorker.users.getPresence(this.peer),
+      user: tkWorker.user.name
+    };
 
-    if (this.data.offer) {
+    if (this.offer) {
       // We don't want to send a duplicate incoming message if one has
       // already been queued.
       var msgQueued = this.messageQueue.some(function(message) {
         return message.topic === "talkilla.conversation-incoming";
       });
 
-      if (!msgQueued)
-        this.port.postEvent("talkilla.conversation-incoming", this.data);
+      if (!msgQueued) {
+        msg.offer = this.offer;
+        this.port.postEvent("talkilla.conversation-incoming", msg);
+      }
     }
     else
-      this.port.postEvent("talkilla.conversation-open", this.data);
+      this.port.postEvent("talkilla.conversation-open", msg);
 
     // Now send any queued messages
     this.messageQueue.forEach(function(message) {
@@ -92,23 +97,22 @@ Conversation.prototype = {
    * Returns true if this conversation window is for the specified
    * peer and the incoming call data is passed to that window.
    *
-   * @param peer The id of the peer to compare with.
+   * @param {payloads.offer} offer: the offer message for an
+   *                                incoming conversation
    */
-  handleIncomingCall: function(data) {
-    tkWorker.ports.broadcastDebug('handle incoming call', data);
+  handleIncomingCall: function(offer) {
+    tkWorker.ports.broadcastDebug('handle incoming call', offer);
 
-    if (this.data.peer !== data.peer)
+    if (this.peer !== offer.peer)
       return false;
 
-    if (tkWorker.user)
-      data.user = tkWorker.user.name;
-
-    this.data = data;
-
-    // retrieve peer presence information
-    this.data.peerPresence = tkWorker.users.getPresence(this.data.peer);
-
-    this._sendMessage("talkilla.conversation-incoming", this.data);
+    this._sendMessage("talkilla.conversation-incoming", {
+      capabilities: this.capabilities,
+      peer: this.peer,
+      peerPresence: tkWorker.users.getPresence(this.peer),
+      offer: offer,
+      user: tkWorker.user.name
+    });
 
     return true;
   },
@@ -137,6 +141,30 @@ Conversation.prototype = {
     tkWorker.ports.broadcastDebug('conversation accepted', data);
     this.port.postEvent('talkilla.call-establishment', data);
   },
+
+  /**
+   * Call to tell the conversation window that the call has been
+   * put on hold by the peer
+   *
+   * @param {payloads.Hold} The hold message for the conversation
+   */
+  hold: function(data) {
+    tkWorker.ports.broadcastDebug('hold', data);
+    this.port.postEvent('talkilla.hold', data);
+  },
+
+
+  /**
+   * Call to tell the conversation window that the call has been
+   * resumed by the peer.
+   *
+   * @param {payloads.Resume} The resume message for the conversation
+   */
+  resume: function(data) {
+    tkWorker.ports.broadcastDebug('resume', data);
+    this.port.postEvent('talkilla.resume', data);
+  },
+
 
   /**
    * Call to tell the conversation window that the call has been
@@ -172,7 +200,7 @@ Conversation.prototype = {
  * UserData properties:
  *
  * name:      The name of the currently signed-in user.
- * connected: Whether or not the websocket to the server is connected.
+ * connected: Whether or not the user is connected.
  */
 function UserData(initial, config) {
   this._rootURL = config ? config.ROOTURL : '';
@@ -250,13 +278,20 @@ UserData.prototype = {
     };
 
     browserPort.postEvent('social.user-profile', userData);
+    tkWorker.ports.broadcastEvent('social.user-profile', userData);
   }
 };
 
+/**
+ * Setups a SPA.
+ *
+ * @param {SPA} spa SPA container.
+ */
 function _setupSPA(spa) {
   spa.on("connected", function(data) {
     tkWorker.user.name = data.addresses[0].value;
     tkWorker.user.connected = true;
+    this.capabilities = data.capabilities;
 
     // XXX Now we're connected, load the contacts database.
     // Really we should do this after successful sign-in or re-connect
@@ -301,7 +336,7 @@ function _setupSPA(spa) {
     if (currentConversation) {
       // If the currentConversation window can handle the incoming call
       // data (e.g. peer matches) then just handle it.
-      if (currentConversation.handleIncomingCall(offerMsg.toJSON()))
+      if (currentConversation.handleIncomingCall(offerMsg))
         return;
 
       // XXX currently, we can't handle more than one conversation
@@ -309,28 +344,44 @@ function _setupSPA(spa) {
       return;
     }
 
-    currentConversation = new Conversation(offerMsg.toJSON());
+    currentConversation = new Conversation(spa, offerMsg.peer, offerMsg);
   });
 
   spa.on("answer", function(answerMsg) {
-    currentConversation.callAccepted(answerMsg.toJSON());
+    if (currentConversation)
+      currentConversation.callAccepted(answerMsg);
   });
 
   spa.on("hangup", function(hangupMsg) {
     if (currentConversation)
-      currentConversation.callHangup(hangupMsg.toJSON());
+      currentConversation.callHangup(hangupMsg);
   });
 
   spa.on("ice:candidate", function(iceCandidateMsg) {
     if (currentConversation)
-      currentConversation.iceCandidate(iceCandidateMsg.toJSON());
+      currentConversation.iceCandidate(iceCandidateMsg);
+  });
+
+  spa.on("hold", function(holdMsg) {
+    if (currentConversation)
+      currentConversation.hold(holdMsg);
+  });
+
+  spa.on("resume", function(resumeMsg) {
+    if (currentConversation)
+      currentConversation.resume(resumeMsg);
+  });
+
+  spa.on("move-accept", function(moveAcceptMsg) {
+    tkWorker.ports.broadcastEvent("talkilla.move-accept",
+                                  moveAcceptMsg.toJSON());
   });
 
   spa.on("error", function(event) {
-    tkWorker.ports.broadcastEvent("talkilla.websocket-error", event);
+    tkWorker.ports.broadcastEvent("talkilla.spa-error", event);
   });
 
-  spa.on("disconnected", function(event) {
+  spa.on("network-error", function(event) {
     // XXX: this will need future work to handle retrying presence connections
     tkWorker.ports.broadcastEvent('talkilla.presence-unavailable', event.code);
 
@@ -339,6 +390,7 @@ function _setupSPA(spa) {
 
   spa.on("reauth-needed", function(event) {
     tkWorker.ports.broadcastEvent('talkilla.reauth-needed');
+    tkWorker.closeSession();
   });
 }
 
@@ -359,6 +411,8 @@ var handlers = {
     // Don't have it in the main list of ports, as we don't need
     // to broadcast all our talkilla.* messages to the social api.
     tkWorker.ports.remove(this);
+
+    tkWorker.initialize();
   },
 
   // Talkilla events
@@ -370,7 +424,7 @@ var handlers = {
   'talkilla.conversation-open': function(event) {
     // XXX Temporarily work around to only allow one call at a time.
     if (!currentConversation)
-      currentConversation = new Conversation(event.data);
+      currentConversation = new Conversation(spa, event.data.peer);
   },
 
   'talkilla.chat-window-ready': function() {
@@ -385,15 +439,11 @@ var handlers = {
    */
   'talkilla.sidebar-ready': function(event) {
     this.postEvent('talkilla.worker-ready');
-  },
-
-  /**
-   * Called when the sidebar request the initial presence state.
-   */
-  'talkilla.presence-request': function(event) {
-    var users = tkWorker.users.toArray();
-    spa.presenceRequest();
-    this.postEvent('talkilla.users', users);
+    if (spa) {
+      tkWorker.user.send();
+      this.postEvent("talkilla.spa-connected");
+      this.postEvent('talkilla.users', tkWorker.users.toArray());
+    }
   },
 
   /**
@@ -439,6 +489,17 @@ var handlers = {
   },
 
   /**
+   * Called to forget the credentials of a SPA.
+   *
+   * @param {String} event.data the name of the SPA.
+   */
+  'talkilla.spa-forget-credentials': function(event) {
+    // XXX: For now we have only one SPA so we don't need to use
+    // event.data.
+    spa.forgetCredentials();
+  },
+
+  /**
    * Called to enable a new SPA.
    *
    * @param {Object} event.data a data structure representation of a
@@ -446,12 +507,28 @@ var handlers = {
    */
   'talkilla.spa-enable': function(event) {
     var spec = new payloads.SPASpec(event.data);
-    // XXX: For now, we only support one SPA.
-    spa = new SPA({src: spec.src});
-    _setupSPA(spa);
-    spa.connect(spec.credentials);
-  }
+    tkWorker.spaDb.add(spec, function(err) {
+      // XXX: For now, we only support one SPA.
+      spa = new SPA({src: spec.src});
+      _setupSPA(spa);
+      spa.connect(spec.credentials);
+    });
+  },
 
+  /**
+   * Called to disable an installed SPA.
+   *
+   * @param {String} event.data the name of the SPA to disable.
+   */
+  'talkilla.spa-disable': function(event) {
+    // XXX: For now, we only support one SPA
+    tkWorker.spaDb.drop();
+    tkWorker.closeSession();
+  },
+
+  'talkilla.initiate-move': function(event) {
+    spa.initiateMove(new payloads.Move(event.data));
+  }
 };
 
 function Port(port) {
@@ -576,6 +653,7 @@ function TkWorker(options) {
   // XXX Move all globals into this constructor and create them here.
   options = options || {};
   this.contactsDb = options.contactsDb;
+  this.spaDb = options.spaDb;
   this.user = options.user;
   this.users = options.users || new CurrentUsers();
   this.ports = options.ports;
@@ -583,13 +661,26 @@ function TkWorker(options) {
 
 TkWorker.prototype = {
   /**
+   * Initializes the worker
+   *
+   * @param {Object} options Options object
+   *
+   * Available options:
+   * - {
+   */
+  initialize: function() {
+    // Now we're set up load the spa info
+    this.loadSPAs();
+  },
+
+  /**
    * Closes current user session.
    */
   closeSession: function() {
     this.user.reset();
     this.users.reset();
     this.contactsDb.close();
-    this.ports.broadcastEvent('talkilla.logout-success', {});
+    this.spaDb.close();
   },
 
   /**
@@ -629,6 +720,23 @@ TkWorker.prototype = {
   updateContactList: function(contacts) {
     this.users.updateContacts(contacts);
     this.ports.broadcastEvent("talkilla.users", this.users.toArray());
+  },
+
+  loadSPAs: function(callback) {
+    this.spaDb.all(function(err, specs) {
+      tkWorker.ports.broadcastDebug("loaded specs", specs);
+      specs.forEach(function(specData) {
+        var spec = new payloads.SPASpec(specData);
+
+        // XXX: For now, we only support one SPA.
+        spa = new SPA({src: spec.src});
+        _setupSPA(spa);
+        spa.connect(spec.credentials);
+
+        if (callback)
+          callback();
+      });
+    });
   }
 };
 
@@ -641,6 +749,10 @@ tkWorker = new TkWorker({
   contactsDb: new ContactsDB({
     dbname: "TalkillaContacts",
     storename: "contacts"
+  }),
+  spaDb: new SPADB({
+    dbname: "EnabledSPA",
+    storename: "enabled-spa"
   })
 });
 

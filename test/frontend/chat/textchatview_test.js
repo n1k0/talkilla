@@ -1,11 +1,10 @@
 /*global app, chai, sinon, ChatApp, WebRTC */
-
 /* jshint expr:true */
+"use strict";
+
 var expect = chai.expect;
 
 describe("Text chat views", function() {
-  "use strict";
-
   function fakeSDP(str) {
     return {
       str: str,
@@ -106,6 +105,8 @@ describe("Text chat views", function() {
       peer = new app.models.User();
 
       user.set({nick: "niko"});
+
+      localStorage.removeItem('notFirstMessage');
     });
 
     afterEach(function() {
@@ -159,7 +160,7 @@ describe("Text chat views", function() {
     it("should allow the caller to send a first message", function(done) {
       var chatApp = new ChatApp();
       var textChat = chatApp.textChatView.collection;
-      chatApp.port.trigger("talkilla.conversation-open", {
+      chatApp.appPort.trigger("talkilla.conversation-open", {
         peer: "niko",
         user: "jb"
       });
@@ -187,6 +188,97 @@ describe("Text chat views", function() {
 
         sinon.assert.callCount(textChat.add, 0);
       });
+
+    describe("#initialize", function() {
+
+      var view;
+
+      beforeEach(function() {
+        var collection = new app.models.TextChat([], {
+          media: media,
+          user: user,
+          peer: peer
+        });
+        sandbox.stub(collection, "on");
+        view = new app.views.TextChatView({
+          call: new app.models.Call(),
+          collection: collection
+        });
+      });
+
+      it("should have placeholder for the first message", function() {
+        view.render();
+
+        // XXX: Check for text to be present and not exact text message
+        expect(view.$('form input[name="message"]').attr('placeholder'))
+              .to.equal('Type something to start chatting');
+      });
+
+      it("should listen to start of peer's typing activity", function() {
+        sinon.assert.called(view.collection.on);
+        sinon.assert.calledWith(view.collection.on, "chat:type-start");
+      });
+
+      it("should listen to stop of peer's typing activity", function() {
+        sinon.assert.called(view.collection.on);
+        sinon.assert.calledWith(view.collection.on, "chat:type-stop");
+      });
+    });
+
+    describe("Public Events", function() {
+
+      var view;
+
+      beforeEach(function() {
+        view = new app.views.TextChatView({
+          call: new app.models.Call(),
+          collection: new app.models.TextChat([], {
+            media: media,
+            user: user,
+            peer: peer
+          })
+        });
+      });
+
+      describe("#_showTypingNotification", function() {
+        it("should add the typing class", function() {
+          view.collection.trigger('chat:type-start', {nick:'hardfire'});
+
+          expect(view.$el.hasClass('typing')).to.be.equal(true);
+        });
+
+        it("should add a data nick attribute", function() {
+          view.collection.trigger('chat:type-start', {nick:'avinash'});
+
+          expect(view.$('ul').attr('data-nick')).eql('avinash');
+        });
+      });
+
+      describe("#_clearTypingNotification", function() {
+        it("should remove the typing class", function() {
+          view.$el.addClass('typing');
+
+          view.collection.trigger('chat:type-stop');
+
+          expect(view.$el.hasClass('typing')).to.be.equal(false);
+        });
+      });
+
+      it("should focus on the input textbox", function() {
+        // stubbing focus because travis setup doesnt handle focus correctly
+        sandbox.stub($.fn, 'focus');
+        var view = new app.views.TextChatView({
+          call: new app.models.Call(),
+          collection: new app.models.TextChat([], {
+            media: media,
+            user: user,
+            peer: peer
+          })
+        });
+
+        sinon.assert.calledOnce(view.$('form input[name="message"]').focus);
+      });
+    });
 
     describe("#render", function() {
       var textChatView, textChat, blob;
@@ -220,7 +312,37 @@ describe("Text chat views", function() {
 
         sinon.assert.calledOnce(app.views.FileTransferView.prototype.render);
       });
+
+      it("should not have placeholder text after first message", function() {
+
+        //send a test mesage
+        $('#textchat [name="message"]').val("plop");
+        $("#textchat form").trigger("submit");
+
+        expect(textChatView.$('form input[name="message"]').attr('placeholder'))
+              .to.equal(undefined);
+      });
     });
+
+    describe("#sendTyping", function() {
+      it("should call collection.notifyTyping()", function() {
+        var view = new app.views.TextChatView({
+          call: new app.models.Call(),
+          collection: new app.models.TextChat([], {
+            media: media,
+            user: user,
+            peer: peer
+          })
+        });
+
+        sandbox.stub(view.collection, "notifyTyping");
+
+        view.sendTyping();
+
+        sinon.assert.calledOnce(view.collection.notifyTyping);
+      });
+    });
+
   });
 });
 

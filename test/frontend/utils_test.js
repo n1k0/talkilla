@@ -1,8 +1,9 @@
 /*global app, chai, sinon */
+"use strict";
+
 var expect = chai.expect;
 
 describe('Utils', function() {
-  "use strict";
   var sandbox;
 
   beforeEach(function() {
@@ -19,7 +20,8 @@ describe('Utils', function() {
     beforeEach(function() {
       fakeAudio = {
         play: sinon.spy(),
-        pause: sinon.spy()
+        pause: sinon.spy(),
+        loop: false
       };
       sandbox.stub(window, "Audio").returns(fakeAudio);
     });
@@ -71,6 +73,7 @@ describe('Utils', function() {
       });
     });
 
+
     describe("#stop", function() {
       it("should stop a registered sound", function() {
         var audioLibrary = new app.utils.AudioLibrary({foo: "/snd/foo.ogg"});
@@ -97,6 +100,28 @@ describe('Utils', function() {
         audioLibrary.stop('foo', 'bar');
 
         sinon.assert.calledTwice(fakeAudio.pause);
+      });
+    });
+
+    describe("#enableLoop", function() {
+      it("should add a loop attribute to a sound", function() {
+        var audioLibrary = new app.utils.AudioLibrary({foo: "/snd/foo.ogg"});
+
+        audioLibrary.enableLoop('foo');
+
+        expect(audioLibrary.sounds.foo.loop).to.be.equal(true);
+      });
+
+      it("should add loop attribute to multiple sounds", function() {
+        var audioLibrary = new app.utils.AudioLibrary({
+          foo: "/snd/foo.ogg",
+          bar: "/snd/bar.ogg"
+        });
+
+        audioLibrary.enableLoop('foo', 'bar');
+
+        expect(audioLibrary.sounds.foo.loop).to.be.equal(true);
+        expect(audioLibrary.sounds.bar.loop).to.be.equal(true);
       });
     });
 

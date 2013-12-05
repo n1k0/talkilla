@@ -10,7 +10,10 @@
   });
 
   app.models.UserSet = Backbone.Collection.extend({
-    model: app.models.User
+    model: app.models.User,
+    comparator: function(item) {
+        return item.get('nick').toLowerCase();
+      }
   });
 
   /**
@@ -22,29 +25,7 @@
      * Persona as a session provider.
      */
     initialize: function() {
-      navigator.id.watch({
-        onlogin: this._onSignin.bind(this)
-      });
       app.models.User.prototype.initialize.apply(this, arguments);
-    },
-
-    /**
-     * Called when the user is signed in via persona.
-     *
-     * @param personaAssertion The assertion from persona to verify the user on
-     *                         the user
-     */
-    _onSignin: function(personaAssertion) {
-      if (!this.isLoggedIn())
-        this.trigger('signin-requested', personaAssertion);
-    },
-
-    /**
-     * Authenticate a user via persona.
-     */
-    signin: function() {
-      if (!this.isLoggedIn())
-        navigator.id.request();
     },
 
     /**

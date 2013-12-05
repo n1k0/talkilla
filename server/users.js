@@ -1,3 +1,5 @@
+"use strict";
+
 var config = require('./config').config;
 var logger = require('./logger');
 
@@ -17,6 +19,10 @@ Waiter.prototype.resolve = function(data) {
   clearTimeout(this.timeout);
   this.resolved = true;
   this.callback(data);
+};
+
+Waiter.prototype.clear = function() {
+  clearTimeout(this.timeout);
 };
 
 /**
@@ -103,6 +109,14 @@ User.prototype.disconnect = function() {
  */
 User.prototype.toJSON = function() {
   return {nick: this.nick};
+};
+
+User.prototype.clearPending = function() {
+  if (this.pending) {
+    this.pending.clear();
+    this.pending = undefined;
+  }
+  return this;
 };
 
 /**

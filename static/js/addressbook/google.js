@@ -4,6 +4,8 @@
  * Google Contacts API helper.
  */
 var GoogleContacts = (function() {
+  "use strict";
+
   var AUTH_COOKIE_NAME = "google.auth.token";
   var AUTH_COOKIE_TTL = 365 * 10; // in days
   var MAX_RESULTS = 9999; // max number of contacts to fetch
@@ -25,13 +27,13 @@ var GoogleContacts = (function() {
    * Constructor.
    *
    * @param {Object} options Options:
-   * - {Port}   port           Social API port
+   * - {AppPort} appPort       AppPort object for communication to the SocialAPI
    * - {String} authCookieName Authentication token cookie name
    * - {String} token          Authentication token
    */
   function GoogleContacts(options) {
     options = options || {};
-    this.port = options.port;
+    this.appPort = options.appPort;
     this.authCookieName = options.authCookieName || AUTH_COOKIE_NAME;
     this.authCookieTTL = options.authCookieTTL || AUTH_COOKIE_TTL;
     this.maxResults = options.maxResults || MAX_RESULTS;
@@ -139,18 +141,18 @@ var GoogleContacts = (function() {
 
     /**
      * Loads contacts from the Google Contacts API and notify current opened
-     * port through the `talkilla.contacts` event.
+     * AppPort through the `talkilla.contacts` event.
      *
      * Emits `talkilla.contacts-error` on any encountered error.
      */
     loadContacts: function() {
       this.authorize(function(err) {
         if (err)
-          return this.port.postEvent("talkilla.contacts-error", err);
+          return this.appPort.post("talkilla.contacts-error", err);
         this.all(function(err, contacts) {
           if (err)
-            return this.port.postEvent("talkilla.contacts-error", err);
-          this.port.postEvent("talkilla.contacts", {
+            return this.appPort.post("talkilla.contacts-error", err);
+          this.appPort.post("talkilla.contacts", {
             contacts: contacts,
             source: "google"
           });

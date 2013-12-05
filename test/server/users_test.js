@@ -1,4 +1,5 @@
 /* jshint expr:true */
+"use strict";
 
 var chai = require("chai");
 var expect = chai.expect;
@@ -75,6 +76,22 @@ describe("User", function() {
 
       expect(user.events).to.deep.equal([]);
       sinon.assert.calledOnce(logger.warn);
+    });
+  });
+
+  describe("#clearPending", function() {
+    it("should not throw if there are no pending events", function() {
+      expect(user.clearPending.bind(user)).not.to.Throw();
+    });
+
+    it("should clear the pending event", function() {
+      user.pending = { clear: sinon.spy() };
+      var pendingSpy = user.pending.clear;
+
+      user.clearPending();
+
+      sinon.assert.calledOnce(pendingSpy);
+      expect(user.pending).to.be.undefined;
     });
   });
 
@@ -277,7 +294,6 @@ describe("Users", function() {
       users.add("foo").add("bar").add("goo");
       users.get("foo").connect("fake ws");
 
-      // No WebSocket object
       expect(users.toJSON()).to.deep.equal([
         {nick: "foo"},
         {nick: "bar"},
