@@ -3,6 +3,11 @@
  */
 .sidebar {
   background: #fdfdfd;
+
+  /* when loaded as a panel, size the panel so that the whole thing
+   * is displayed, not just a scrollable subsection.
+   */
+  overflow: visible;
 }
 
 .sidebar header {
@@ -26,6 +31,21 @@
 .sidebar #signin img {
   width: 185px;
   height: 25px;
+}
+
+.sidebar #pstn-dialin {
+  padding: 10px 0 0 0;
+  text-align: center;
+}
+
+.sidebar #pstn-dialin form {
+  margin-bottom: 3px;
+}
+
+.sidebar #pstn-dialin input {
+  width: 130px;
+  font-size: 13px;
+  padding-top: 5px;
 }
 
 .sidebar .title {
@@ -98,6 +118,10 @@
   width: 100%;
   background: #F5F1E8;
   text-align: center;
-  padding-top: 10px;
   border-top: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+}
+
+.sidebar footer p {
+  margin: 10px 0;  /* override bootstrap to set top & bottom margins the same */
 }
