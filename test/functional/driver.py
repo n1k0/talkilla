@@ -26,6 +26,8 @@ class Driver(WebDriver):
             self.nick = kwargs["nick"]
         del kwargs["nick"]
         super(Driver, self).__init__(*args, **kwargs)
+        # enable lazy waiting for elements to be available
+        self.implicitly_wait(8)
 
     def openConversationWith(self, nick):
         """ Opens a new conversation window with the user matching the provided
