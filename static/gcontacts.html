@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script src="https://apis.google.com/js/client.js"></script>
+<script>
+"use strict";
+/*global gapi*/
+function initAuth() {
+  gapi.auth.init(function() {
+    document.getElementById("authButton").removeAttribute("disabled");
+  });
+}
+
+var token;
+function auth() {
+  var config = {
+    client_id: '122170353410.apps.googleusercontent.com',
+    scope: 'https://www.google.com/m8/feeds'
+  };
+  gapi.auth.authorize(config, function() {
+    token = gapi.auth.getToken().access_token;
+    console.log(token);
+    var request = new XMLHttpRequest();
+    request.onload = onContactsLoad;
+    var url = "https://www.google.com/m8/feeds/contacts/default/full" +
+      "?v=3.0&alt=json&max-results=30&access_token=" + encodeURIComponent(token);
+    request.open("GET", url, true);
+    request.send();
+  });
+}
+
+function joinEmails(aEmails) {
+  return (aEmails || []).map(function(e) { return e.address }).join(", ");
+}
+
+function joinPhones(aEmails) {
+  return (aEmails || []).map(function(e) { return e.$t }).join(", ");
+}
+
+function getPhotoUrl(entry, cb) {
+  var link = entry.link.filter(function(link) {
+    return link.type.indexOf("image") === 0;
+  }).shift();
+  if (!link)
+    return cb(null);
+  var request = new XMLHttpRequest();
+  var photoUrl = link.href + "&access_token=" + token;
+  console.log(photoUrl);
+  request.open("GET", photoUrl, true);
+  request.responseType = "blob";
+  request.onload = cb;
+  request.send();
+}
+
+function onContactsLoad() {
+//        console.log("xhr data = " + this.responseText);
+  var data = JSON.parse(this.responseText);
+  var entries = data.feed.entry || [];
+  //document.getElementById("json").value = this.responseText;
+  document.getElementById("contactCount").textContent = "Fetched " + entries.length + " contacts from " + data.feed.id.$t + ".";
+  entries.forEach(function(e) {
+    var tr = document.createElement("tr");
+    var name = e.gd$name && typeof e.gd$name === "object" && e.gd$name.gd$fullName ? e.gd$name.gd$fullName.$t : "";
+    getPhotoUrl(e, function(a, b, c) {
+      console.log("pic", a, b, c);
+    });
+    var pic = "";
+    tr.innerHTML = "<td><img src='" + pic + "'></td><td>" + name + "</td><td>" + joinEmails(e.gd$email) + "</td><td>" + joinPhones(e.gd$phoneNumber) + "</td>";
+    document.getElementById("googleContacts").appendChild(tr);
+  });
+}
+</script>
+  </head>
+
+  <body onload="initAuth();">
+
+    <h2>Google contacts</h2>
+    <button id="authButton" disabled="true" onclick="auth();">Load</button>
+    <p id="contactCount"></p>
+    <textarea id="json" style="width:100%;height:100px"></textarea>
+    <table id="googleContacts" border="1">
+      <tr>
+        <th>Pic</th><th>Name</th><th>email</th><th>tel</th>
+      </tr>
+    </table>
+  </body>
+</html>
