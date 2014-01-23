@@ -4,8 +4,12 @@ var util = require("util");
 var https = require("https");
 var app = require("./server").app;
 
+/**
+ * Proxifies Google Contacts Photo API, because it doesn't send CORS compatible
+ * headers for browser consumption.
+ */
 app.get("/proxy/google/avatar/:email/:id", function(req, res) {
-  var format = req.query.format === "base64" ? "base64" : "image";
+  var format = req.query.format === "json" ? "json" : "image";
   var options = {
     method: "GET",
     host: "www.google.com",
@@ -24,28 +28,40 @@ app.get("/proxy/google/avatar/:email/:id", function(req, res) {
         // something large enough to deal with avatars; final image is sliced
         // back before sending the result
         size = parseInt(response.headers["content-length"], 10) || 999999,
-        body = new Buffer(size);
+        imageData = new Buffer(size);
+
+    if (response.statusCode !== 200) {
+      return res.send(response.statusCode,
+                      util.format("HTTP %d", response.statusCode));
+    }
 
     response.setEncoding('binary');
 
     response.on("data", function(chunk) {
-      body.write(chunk, currentByte, "binary");
+      imageData.write(chunk, currentByte, "binary");
       currentByte += chunk.length;
     });
 
     response.on("end", function() {
       // trim out unneeded contents
-      var finalBody = body.slice(0, currentByte);
+      var finalImageData = imageData.slice(0, currentByte);
       if (format === "image") {
         // raw image contents
         res.type(contentType);
-        res.send(finalBody);
+        res.send(finalImageData);
       } else {
-        // base64 export
-        res.type("text/plain");
-        res.send(finalBody.toString('base64'));
+        // json/base64 export
+        res.type("application/json");
+        res.json({
+          type: contentType,
+          data: finalImageData.toString('base64')
+        });
       }
     });
+  });
+
+  request.on("error", function(err) {
+    res.send(err, 500);
   });
 
   request.end();
