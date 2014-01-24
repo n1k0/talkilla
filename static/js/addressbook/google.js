@@ -44,21 +44,59 @@ var GoogleContacts = (function() {
    * Contacts data importer.
    * @param {Object} feedData Google Contacts Data Feed
    */
-  GoogleContacts.Importer = function(dataFeed) {
+  GoogleContacts.Importer = function(dataFeed, token) {
     this.dataFeed = dataFeed;
+    this.token = token;
   };
 
   GoogleContacts.Importer.prototype = {
+    _buildAvatarProxyUrl: function(contact) {
+      var link = (contact.link || []).filter(function(link) {
+        return link.type.indexOf("image") === 0;
+      }).shift();
+      if (!link)
+        return;
+      var match = /feeds\/photos\/media\/(.*)\/(.*)\?/.exec(link.href);
+      if (!match)
+        return;
+      return ["/proxy/google/avatar/", match[1], "/", match[2],
+              "?token=" + encodeURIComponent(this.token)].join("");
+    },
+
+    _fetchAvatar: function(contact, cb) {
+      var request = new XMLHttpRequest();
+      request.responseType = "blob";
+      request.onload = function(event) {
+        var request = event && event.target;
+        // sinon might pass us an empty event here
+        if (!request || request.readyState !== 4)
+          return;
+        if (request.status === 404) // no picture for this contact
+          return cb.call(this, null);
+        if (request.status !== 200) {
+          return cb.call(this, new Error("Fetching contact avatar failed: " +
+                                         request.statusText));
+        }
+        cb.call(this, null, request.response);
+      }.bind(this);
+      request.onerror = function(event) {
+        cb.call(this, new Error("HTTP " + event.target.status + " error"));
+      }.bind(this);
+      request.open("GET", this._buildAvatarProxyUrl(contact), true);
+      request.send();
+    },
+
     /**
      * Extracts contact information (email addresses, phone numbers) from
      * current data feed.
      *
-     * @param {String} id What should be considered the unique identifier
-                          (Should be "phoneNumber" or "email").
+     * @param  {String}   id  What should be considered the unique identifier
+                              (Should be "phoneNumber" or "email").
+     * @param  {Function} cb  Callback(error, contacts)
      * @return {Array}
      */
-    normalize: function(id) {
-      var keyField, getUsername;
+    normalize: function(id, cb) {
+      var keyField, getUsername, contacts;
 
       if (id === "email") {
         keyField = "gd$email";
@@ -72,18 +110,17 @@ var GoogleContacts = (function() {
         };
       }
 
-      return this.dataFeed.feed.entry.reduce(function(contacts, entry) {
+      contacts = this.dataFeed.feed.entry.reduce(function(contacts, entry) {
         if (!entry[keyField])
           return contacts;
         return contacts.concat(entry[keyField].map(function(key) {
-          var contact = {
-            username: getUsername(key)
-          };
+          var contact = {username: getUsername(key)};
           if (entry.gd$name && entry.gd$name.gd$fullName &&
               entry.gd$name.gd$fullName.$t)
             contact.fullName = entry.gd$name.gd$fullName.$t;
+          contact.avatar = this._fetchAvatar(entry, function(err, contact) {
 
-          return contact;
+          });
         }));
       }, []);
     }
@@ -152,10 +189,11 @@ var GoogleContacts = (function() {
           return cb.call(this, new Error(request.statusText));
         try {
           var feed = JSON.parse(request.responseText);
-          cb.call(this, null,
-            new GoogleContacts.Importer(feed).normalize(contactIdentifier));
+          new GoogleContacts.Importer(feed, this.token)
+                            .normalize(contactIdentifier, cb);
         } catch (err) {
-          cb.call(this, err);
+          var message = "Unable to parse & import Google contacts feed: " + err;
+          cb.call(this, new Error(message));
         }
       }.bind(this);
       request.onerror = function(event) {

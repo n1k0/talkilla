@@ -24,7 +24,7 @@ var ContactsDB = (function() {
     this.options = {
       dbname: options.dbname || "TalkillaContacts",
       storename: options.storename || "contacts",
-      version: options.version || 2
+      version: options.version || 3
     };
     this.db = undefined;
   }
@@ -278,6 +278,7 @@ var ContactsDB = (function() {
     });
     store.createIndex("username", "username", {unique: true});
     store.createIndex("source", "source", {unique: false});
+    store.createIndex("image", "image", {unique: false});
     return store;
   };
 
