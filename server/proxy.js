@@ -9,6 +9,7 @@ var app = require("./server").app;
  * headers for browser consumption.
  */
 app.get("/proxy/google/avatar/:email/:id", function(req, res) {
+  console.log("incoming request");
   var format = req.query.format === "json" ? "json" : "image";
   var options = {
     method: "GET",
@@ -31,18 +32,23 @@ app.get("/proxy/google/avatar/:email/:id", function(req, res) {
         imageData = new Buffer(size);
 
     if (response.statusCode !== 200) {
+      console.log("request failed", response.statusCode, response.headers);
       return res.send(response.statusCode,
                       util.format("HTTP %d", response.statusCode));
+    } else {
+      console.log("request succeeded");
     }
 
     response.setEncoding('binary');
 
     response.on("data", function(chunk) {
+      console.log("request.data");
       imageData.write(chunk, currentByte, "binary");
       currentByte += chunk.length;
     });
 
     response.on("end", function() {
+      console.log("request.end");
       // trim out unneeded contents
       var finalImageData = imageData.slice(0, currentByte);
       if (format === "image") {
@@ -60,9 +66,17 @@ app.get("/proxy/google/avatar/:email/:id", function(req, res) {
     });
   });
 
-  request.on("error", function(err) {
-    res.send(err, 500);
+  request.end();
+
+  request.setTimeout(2000, function() {
+    res.send(503, "timed out");
+    console.log("timed out");
   });
 
-  request.end();
+  request.on("error", function(err) {
+    // XXX send appropriate format (eg. default avatar on 404, json when needed,
+    //     etc.)
+    console.log("error", err);
+    res.send(err, 500);
+  });
 });
