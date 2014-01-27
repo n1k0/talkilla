@@ -24,7 +24,7 @@ function auth() {
     var request = new XMLHttpRequest();
     request.onload = onContactsLoad;
     var url = "https://www.google.com/m8/feeds/contacts/default/full" +
-      "?v=3.0&alt=json&max-results=500&access_token=" + encodeURIComponent(token);
+      "?v=3.0&alt=json&max-results=200&access_token=" + encodeURIComponent(token);
     request.open("GET", url, true);
     request.send();
   });
@@ -68,16 +68,20 @@ function onContactsLoad() {
   var entries = data.feed.entry || [];
   //document.getElementById("json").value = this.responseText;
   document.getElementById("contactCount").textContent = "Fetched " + entries.length + " contacts from " + data.feed.id.$t + ".";
+  var i = 10;
   entries.forEach(function(e) {
-    var tr = document.createElement("tr");
-    var name = e.gd$name && typeof e.gd$name === "object" && e.gd$name.gd$fullName ? e.gd$name.gd$fullName.$t : "";
-    // getPhotoUrl(e, function(a, b, c) {
-    //   console.log("pic", a, b, c);
-    // });
-    tr.innerHTML = "<td><img src='" + getPhotoLink(e) + "'></td><td>" + name +
-                   "</td><td>" + joinEmails(e.gd$email) + "</td><td>" +
-                                 joinPhones(e.gd$phoneNumber) + "</td>";
-    document.getElementById("googleContacts").appendChild(tr);
+    i += 120;
+    setTimeout(function() {
+      var tr = document.createElement("tr");
+      var name = e.gd$name && typeof e.gd$name === "object" && e.gd$name.gd$fullName ? e.gd$name.gd$fullName.$t : "";
+      // getPhotoUrl(e, function(a, b, c) {
+      //   console.log("pic", a, b, c);
+      // });
+      tr.innerHTML = "<td><a href='" + getPhotoLink(e) + "'><img src='" + getPhotoLink(e) + "'></a></td><td>" + name +
+                     "</td><td>" + joinEmails(e.gd$email) + "</td><td>" +
+                                   joinPhones(e.gd$phoneNumber) + "</td>";
+      document.getElementById("googleContacts").appendChild(tr);
+    }, i);
   });
 }
 </script>
