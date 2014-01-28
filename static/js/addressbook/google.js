@@ -79,7 +79,7 @@ var GoogleContacts = (function() {
                                          request.statusText));
         }
         try {
-          cb.call(this, null, JSON.parse(request.response));
+          cb.call(this, null, request.response);
         } catch (err) {
           cb.call(this, err);
         }
@@ -93,10 +93,10 @@ var GoogleContacts = (function() {
 
     _fetchAvatars: function(contacts, cb) {
       contra.map(contacts, function(contact, cb) {
-        this._fetchAvatarData(contact, function(err, avatarData) {
+        this._fetchAvatarData(contact, function(err, avatarBlob) {
           if (err)
             return cb(err);
-          contact.avatar = avatarData;
+          contact.avatar = avatarBlob;
           cb(null, contact);
         });
       }.bind(this), cb);
