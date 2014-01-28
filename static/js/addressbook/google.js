@@ -61,7 +61,7 @@ var GoogleContacts = (function() {
       if (!match)
         return;
       return ["/proxy/google/avatar/", match[1], "/", match[2],
-              "?format=json&token=" + encodeURIComponent(this.token)].join("");
+              "?token=" + encodeURIComponent(this.token)].join("");
     },
 
     _fetchAvatarData: function(contact, cb) {

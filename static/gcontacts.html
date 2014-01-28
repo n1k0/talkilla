@@ -16,7 +16,8 @@ var token;
 function auth() {
   var config = {
     client_id: '122170353410.apps.googleusercontent.com',
-    scope: 'https://www.google.com/m8/feeds'
+    scope: ['https://www.google.com/m8/feeds',
+            'https://www.googleapis.com/auth/carddav']
   };
   gapi.auth.authorize(config, function() {
     token = gapi.auth.getToken().access_token;
