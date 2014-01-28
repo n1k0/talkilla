@@ -278,7 +278,7 @@ var ContactsDB = (function() {
     });
     store.createIndex("username", "username", {unique: true});
     store.createIndex("source", "source", {unique: false});
-    store.createIndex("image", "image", {unique: false});
+    store.createIndex("avatar", "avatar", {unique: false});
     return store;
   };
 

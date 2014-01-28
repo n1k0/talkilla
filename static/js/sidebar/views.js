@@ -296,7 +296,7 @@
       '<a class="user-entry" href="#" rel="<%= username %>"',
       '   title="<%= username %>">',
       '  <div class="avatar">',
-      '    <img src="<%= avatar %>">',
+      '    <img src="/img/default-avatar.png">',
       '    <span class="status status-<%= presence %>"></span>',
       '  </div>',
       '  <div class="user-entry-details">',
@@ -316,8 +316,19 @@
       sidebarApp.openConversation(event.currentTarget.getAttribute('rel'));
     },
 
+    renderAvatar: function() {
+      if (!this.model.get("avatar"))
+        return;
+      // XXX: big issue, image blobs are not properly serialized in social
+      //      api messages… blocked
+      var avatarUrl =  URL.createObjectURL(this.model.get("avatar"));
+      this.$(".avatar img").attr("src", avatarUrl);
+      URL.revokeObjectURL(avatarUrl);
+    },
+
     render: function() {
       this.$el.html(this.template(this.model.toJSON()));
+      this.renderAvatar();
       if (this.active)
         this.$('a').addClass('active');
       return this;

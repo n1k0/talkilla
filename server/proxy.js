@@ -35,9 +35,11 @@ app.get("/proxy/google/avatar/:email/:id", function(req, res) {
     if (response.statusCode === 200) {
       console.log("request succeeded");
     } else if (response.statusCode === 404) {
-      return res.sendfile("/Users/niko/Sites/talkilla/static/img/default-avatar.png");
+      return res.sendfile(
+        "/Users/niko/Sites/talkilla/static/img/default-avatar.png");
     } else if (response.statusCode === 503) {
-      console.log("503!!!", response.headers, response.connection._buffer.toString());
+      console.log("503!!!", response.headers,
+                            response.connection._buffer.toString());
       return res.sendfile("/Users/niko/Dropbox/Photos/Icons/twitter-icon2.png");
     } else {
       console.log("request failed", response.statusCode, response.headers);
@@ -76,8 +78,12 @@ app.get("/proxy/google/avatar/:email/:id", function(req, res) {
   request.end();
 
   request.setTimeout(2000, function() {
-    res.send(503, "timed out");
-    console.log("timed out");
+    try {
+      // XXX sometimes headers are already sent for some reason
+      res.send(503, "timed out");
+    } catch (err) {
+    }
+    console.log("timed out; options: ", options);
   });
 
   request.on("error", function(err) {

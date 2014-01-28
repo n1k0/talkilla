@@ -50,14 +50,8 @@ var GoogleContacts = (function() {
   };
 
   GoogleContacts.Importer.prototype = {
-    _buildAvatarProxyUrl: function(contact) {
-      // contact.link is an array of link objects
-      var link = (contact.link || []).filter(function(link) {
-        return link.type.indexOf("image") === 0;
-      }).shift();
-      if (!link)
-        return;
-      var match = /feeds\/photos\/media\/(.*)\/(.*)\?/.exec(link.href);
+    _buildAvatarProxyUrl: function(avatarServiceUrl) {
+      var match = /feeds\/photos\/media\/(.*)\/(.*)\?/.exec(avatarServiceUrl);
       if (!match)
         return;
       return ["/proxy/google/avatar/", match[1], "/", match[2],
@@ -66,39 +60,47 @@ var GoogleContacts = (function() {
 
     _fetchAvatarData: function(contact, cb) {
       var request = new XMLHttpRequest();
-      request.responseType = "blob";
       request.onload = function(event) {
         var request = event && event.target;
         // sinon might pass us an empty event here
         if (!request || request.readyState !== 4)
           return;
-        if (request.status === 404) // no picture for this contact
-          return cb.call(this, null);
-        if (request.status !== 200) {
-          return cb.call(this, new Error("Fetching contact avatar failed: " +
-                                         request.statusText));
-        }
+        if (request.status !== 200)
+          return cb(null);
         try {
-          cb.call(this, null, request.response);
+          return cb(null, request.response);
         } catch (err) {
-          cb.call(this, err);
+          return cb(err);
         }
       }.bind(this);
-      request.onerror = function(event) {
-        cb.call(this, new Error("HTTP " + event.target.status + " error"));
-      }.bind(this);
-      request.open("GET", this._buildAvatarProxyUrl(contact), true);
+      // silent errors as we may occasionally get 503 from the proxy
+      request.onerror = function(event) { cb(null); };
+      request.open("GET", this._buildAvatarProxyUrl(contact.avatarServiceUrl),
+                   true);
+      request.responseType = "blob";
       request.send();
     },
 
+    /**
+     * Batch-fetches Google contacts avatars asynchronously.
+     *
+     * @param  {Array}    contacts List of contact entries
+     * @param  {Function} cb       Callback(error, contacts)
+     */
     _fetchAvatars: function(contacts, cb) {
+      var timeout = 0;
       contra.map(contacts, function(contact, cb) {
-        this._fetchAvatarData(contact, function(err, avatarBlob) {
-          if (err)
-            return cb(err);
-          contact.avatar = avatarBlob;
-          cb(null, contact);
-        });
+        timeout += 120; // schedule next request 120ms later to avoid throttling
+        if (!contact.avatarServiceUrl)
+          return cb(null);
+        setTimeout(function() {
+          this._fetchAvatarData(contact, function(err, avatarBlob) {
+            if (err)
+              return cb(err);
+            contact.avatar = avatarBlob;
+            cb(null, contact);
+          });
+        }.bind(this), timeout);
       }.bind(this), cb);
     },
 
@@ -126,21 +128,28 @@ var GoogleContacts = (function() {
           if (entry.gd$name && entry.gd$name.gd$fullName &&
               entry.gd$name.gd$fullName.$t)
             contact.fullName = entry.gd$name.gd$fullName.$t;
+          // XXX: move this to dedicated method
+          // contact.link is an array of link objects
+          var link = (entry.link || []).filter(function(link) {
+            return link.type.indexOf("image") === 0;
+          }).shift();
+          if (link)
+            contact.avatarServiceUrl = link.href;
           return contact;
         }));
       }, []);
     },
 
     /**
-     * Extracts contact information (email addresses, phone numbers, avatars)
-     * from current data feed.
+     * Runs the importer. Extracts contact information (email addresses,
+     * phone numbers, avatars) from current data feed.
      *
      * @param  {String}   id  What should be considered the unique identifier
                               (Should be "phoneNumber" or "email").
      * @param  {Function} cb  Callback(error, contacts)
      * @return {Array}
      */
-    import: function(id, cb) {
+    run: function(id, cb) {
       this._fetchAvatars(this._normalize(id), cb);
     }
   };
@@ -209,7 +218,7 @@ var GoogleContacts = (function() {
         try {
           var feed = JSON.parse(request.responseText);
           new GoogleContacts.Importer(feed, this.token)
-                            .import(contactIdentifier, cb);
+                            .run(contactIdentifier, cb);
         } catch (err) {
           var message = "Unable to parse & import Google contacts feed: " + err;
           cb.call(this, new Error(message));
